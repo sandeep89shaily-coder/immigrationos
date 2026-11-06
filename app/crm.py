@@ -466,13 +466,14 @@ def review_signed_copy(org_id: UUID, prospect_id: UUID, consultation_id: UUID, a
     # Reviewer has seen and confirmed the actual signed PDF; no app-level claim
     # that the signature service, identity or current RCIC status was verified.
     proof.review_status = "accepted" if payload.decision == "accept" else "rejected"
+    proof.review_note = payload.review_note
     proof.reviewed_by_sub = access.principal.sub
     proof.reviewed_at = utcnow()
     _event(db, access, "crm.signed_copy_reviewed", "consultation_signed_copy", proof.id,
            {"decision": proof.review_status, "signed_copy_sha256": proof.sha256})
     db.commit()
     return {"review_status": proof.review_status, "professional_role_verified": False,
-            "external_signature_cryptography_verified": False, "review_note_not_audited": True}
+            "external_signature_cryptography_verified": False, "review_note_stored_with_restricted_proof": True}
 
 
 @router.post("/prospects/{prospect_id}/consultations/{consultation_id}/complete")
