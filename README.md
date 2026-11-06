@@ -4,6 +4,36 @@
 
 A real FastAPI/PostgreSQL case-and-evidence workspace with OIDC sign-in, tenant-isolated records, a consultant dashboard, encrypted local development uploads, traceable fact suggestions, discrepancy detection, human review, internal form worksheets and task tracking. The code evolves the previously delivered v0.2 foundation; it does **not** reuse the v0.1 single-file Flask demo.
 
+## CRM milestone: prospect → signed consultation evidence → client
+
+The development consultant UI at \`http://localhost:8000/app\` now includes
+**Prospects** alongside Matters and Clients.
+
+- Add a fictional lead and record source/consent; potential duplicates with
+  the same email are flagged for manual review.
+- Record internal contact history and schedule an offset-aware consultation.
+- Prepare immutable, versioned **written consultation agreement terms** with
+  the important s.23 fields. Download an HTML **draft**, which still needs
+  individual professional review and actual signatures.
+- Upload a fictional signed PDF, record when the client received a copy,
+  scan the file with the isolated ClamAV service, inspect a cleared copy and
+  record a professional-role staff attestation. Only then can the appointment
+  be marked completed.
+- Convert the prospect to an existing-workspace client record; conversion
+  is idempotent and does not confer legal representation.
+
+For full test flow, enable the optional isolated malware scanner in development
+(see Docker Compose scanner profile and \`CLAMAV_ENABLED=true\`). An absent
+scanner deliberately **quarantines** signed copies. Do not fake clearance.
+
+**Important:** This is a synthetic-data operational prototype. It does not
+authenticate signatures, verify CICC licences, actually deliver emails,
+generate approved legal agreements, collect fees, implement service retainers,
+or authorize immigration advice. Additional services require a separate s.24
+agreement and applicable regulatory checks.
+
+See [RCIC prospect/consultation workflow and limitations](docs/CRM_PROSPECT_CONSULTATION_V1.md).
+
 ## New in v0.4: verified-identity client intake
 
 - Consultant case → **Portal** tab: create document requests and single-use (48h) email-bound invitations. Tokens are displayed once and **not sent automatically**.
