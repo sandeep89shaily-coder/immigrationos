@@ -54,8 +54,8 @@ def test_cannot_review_without_source_acknowledgment_or_permissions(api):
     who['sub']='viewer'
     with factory() as db:
         db.add(Membership(org_id=UUID(org),subject='viewer',role='viewer',is_active=True));db.commit()
-    assert client.get(base+'/history?filing_context=inside_canada').status_code==200
-    assert client.post(base+'/record',json={**payload,'reviewed_current_ircc_sources':True}).status_code==403
+    assert client.get(base+'/history?filing_context=inside_canada').status_code==404
+    assert client.post(base+'/record',json={**payload,'reviewed_current_ircc_sources':True}).status_code==404
     who['sub']='outsider'
     assert client.get(base+'/history?filing_context=inside_canada').status_code==404
     who['sub']='test-user-a'
