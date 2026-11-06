@@ -1,11 +1,12 @@
 'use strict';
 /* First usable application worklist: study permits only; NO IRCC PDF autofill. */
 const pkgRoot=()=>q()+'/cases/'+encodeURIComponent(S.caseId)+'/package';
+const reqRoot=()=>q()+'/cases/'+encodeURIComponent(S.caseId)+'/requirements';
 
 async function renderPackage(){
  const pkg=await api(pkgRoot());
  S.activePackage=pkg;
- const requirements=pkg.initialized?await api(pkgRoot().replace(/\\/package$/, '/requirements')):null;
+ const requirements=pkg.initialized?await api(reqRoot()):null;
  S.activeRequirements=requirements;
  if(!pkg.initialized){
   let intro='<div class="panel-body"><p>Start an application package by choosing the actual filing location. This selects the study permit form and connects the existing document checklist.</p><div class="warning-text">IMM 1294 and IMM 5709 are NOT auto-filled. Do not file an internal worksheet as an official IRCC document.</div>';
@@ -122,7 +123,7 @@ function pkgApplicability(key){
    '<label><input type="checkbox" name="source_checked" required> I independently checked the current official source and the circumstances of this case.</label>'+
    actions('Record applicability review')+'</form>',async form=>{
      const v=values(form);
-     await api(pkgRoot().replace(/\\/package$/, '/requirements')+'/'+encodeURIComponent(key)+'/applicability',{
+     await api(reqRoot()+'/'+encodeURIComponent(key)+'/applicability',{
        method:'POST',body:{decision:v.decision,reason:v.reason,
          confirmed_current_source:form.querySelector('[name=source_checked]').checked,
          expected_revision:requirement.applicability_revision}});
@@ -143,7 +144,7 @@ function pkgDocumentReview(key){
    '<label><input type="checkbox" name="inspected" required> I inspected the source document personally.</label>'+
    actions('Record document review')+'</form>',async form=>{
      const v=values(form);
-     await api(pkgRoot().replace(/\\/package$/, '/requirements')+'/'+encodeURIComponent(key)+'/documents/review',{
+     await api(reqRoot()+'/'+encodeURIComponent(key)+'/documents/review',{
        method:'POST',body:{document_id:v.document_id,decision:v.decision,
          reason:v.reason,inspected_original_document:form.querySelector('[name=inspected]').checked}});
    });
