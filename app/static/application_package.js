@@ -1,10 +1,13 @@
 'use strict';
 /* First usable application worklist: study permits only; NO IRCC PDF autofill. */
 const pkgRoot=()=>q()+'/cases/'+encodeURIComponent(S.caseId)+'/package';
+const reqRoot=()=>q()+'/cases/'+encodeURIComponent(S.caseId)+'/requirements';
 
 async function renderPackage(){
  const pkg=await api(pkgRoot());
  S.activePackage=pkg;
+ const requirements=pkg.initialized?await api(reqRoot()):null;
+ S.activeRequirements=requirements;
  if(!pkg.initialized){
   let intro='<div class="panel-body"><p>Start an application package by choosing the actual filing location. This selects the study permit form and connects the existing document checklist.</p><div class="warning-text">IMM 1294 and IMM 5709 are NOT auto-filled. Do not file an internal worksheet as an official IRCC document.</div>';
   intro+=btn('Start application package','pkg:create','primary')+'</div>';
@@ -30,13 +33,17 @@ async function renderPackage(){
  }
  body+='<h3>Supporting evidence worklist</h3>';
  body+='<div class="callout">These are the existing, non-exhaustive document requirements for this study-permit route. Conditional items still require an RCIC applicability decision.</div>';
- for(const req of pkg.document_requirements){
+ for(const req of requirements.requirements){
    body+='<div class="item-row"><div style="flex:1"><div class="item-title">'+h(req.title)+'</div>'+
      '<div class="meta">'+h(req.guidance)+'</div>'+
      '<div class="meta"><a href="'+h(req.source_url)+'" target="_blank" rel="noopener noreferrer">Official IRCC guidance ↗</a></div></div>'+
-     '<div class="push">'+chip(req.status)+'</div></div>';
+     '<div class="push">'+chip(req.status)+
+     (req.kind==='conditional_document'?btn('Applicability','pkg:applicability:'+req.key,'smallbtn'):'')+
+     (req.kind!=='verified_facts'?btn('Review document','pkg:docreview:'+req.key,'smallbtn'):'')+
+     '</div></div>';
  }
- body+='<p class="meta">Open evidence issues: '+pkg.open_evidence_issue_count+'</p>';
+ body+='<p class="meta">Unresolved document requirements: '+requirements.unresolved_requirements.length+' · Open evidence issues: '+pkg.open_evidence_issue_count+'</p>';
+ body+='<p class="meta">Applicability decisions and document reviews are recorded with source versions and reviewer audit history. Staff-reviewed does not mean IRCC-approved.</p>';
  body+='<div class="callout">Forms are staff-reviewed copies only: '+(pkg.all_selected_form_copies_staff_reviewed?'all selected copies reviewed.':'more form copies/reviews are needed.')+
    ' Official autofill, Adobe/barcode validity and submission are still NOT implemented.</div>';
  body+='</div>';
@@ -96,9 +103,49 @@ async function pkgAction(action){
  if(action==='pkg:create')return pkgCreate();
  const [,cmd,id]=action.split(':');
  if(cmd==='link')return pkgLink(id);
+ if(cmd==='applicability')return pkgApplicability(id);
+ if(cmd==='docreview')return pkgDocumentReview(id);
  if(cmd==='review')return pkgReview(id);
  if(cmd==='scan'){
    const r=await api(pkgRoot()+'/copies/'+encodeURIComponent(id)+'/scan',{method:'POST'});
    await render();return toast('Malware scan status: '+r.scan_status);
  }
+}
+
+function pkgApplicability(key){
+ const requirement=S.activeRequirements?.requirements.find(x=>x.key===key);
+ if(!requirement)return toast('Refresh the package');
+ modal('<h2>Professional applicability review</h2><p>'+h(requirement.title)+'</p>'+
+   '<p><a href="'+h(requirement.source_url)+'" target="_blank" rel="noopener noreferrer">Official source</a></p>'+
+   '<p class="warning-text">An exemption requires individual circumstances and current IRCC instructions. This record is not legal eligibility approval.</p><form>'+
+   selectField('decision','Applicability',[['required','Required for this case'],['not_applicable','Not applicable — reason required']])+
+   '<div class="form-field"><label>Substantive reasoning</label><textarea name="reason" rows="4" required minlength="25" maxlength="900"></textarea></div>'+
+   '<label><input type="checkbox" name="source_checked" required> I independently checked the current official source and the circumstances of this case.</label>'+
+   actions('Record applicability review')+'</form>',async form=>{
+     const v=values(form);
+     await api(reqRoot()+'/'+encodeURIComponent(key)+'/applicability',{
+       method:'POST',body:{decision:v.decision,reason:v.reason,
+         confirmed_current_source:form.querySelector('[name=source_checked]').checked,
+         expected_revision:requirement.applicability_revision}});
+   });
+}
+function pkgDocumentReview(key){
+ const req=S.activeRequirements?.requirements.find(x=>x.key===key);
+ if(!req)return toast('Refresh the worklist');
+ const allowed=new Set(req.document_types||[]);
+ const docs=(S.data.docs||[]).filter(doc=>allowed.has(doc.document_type)&&
+   !req.reviewed_document_ids.includes(doc.id)&&!req.rejected_document_ids.includes(doc.id));
+ if(!docs.length)return toast('Upload an unreviewed document of the matching type in the Documents tab first.');
+ modal('<h2>Document review · '+h(req.title)+'</h2>'+
+   '<p>Check the original file, its identity, completeness, expiry and applicability. An accepted document is NOT proof of IRCC acceptance.</p><form>'+
+   selectField('document_id','Existing document',docs.map(doc=>[doc.id,doc.filename+' ('+doc.document_type+')']))+
+   selectField('decision','Decision',[['accepted','Accept for staff case worklist'],['rejected','Reject document']])+
+   '<div class="form-field"><label>Review notes</label><textarea name="reason" rows="4" required minlength="25" maxlength="900"></textarea></div>'+
+   '<label><input type="checkbox" name="inspected" required> I inspected the source document personally.</label>'+
+   actions('Record document review')+'</form>',async form=>{
+     const v=values(form);
+     await api(reqRoot()+'/'+encodeURIComponent(key)+'/documents/review',{
+       method:'POST',body:{document_id:v.document_id,decision:v.decision,
+         reason:v.reason,inspected_original_document:form.querySelector('[name=inspected]').checked}});
+   });
 }

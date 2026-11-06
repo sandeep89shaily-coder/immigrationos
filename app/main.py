@@ -208,6 +208,8 @@ from app.form_workflow_profiles import router as form_workflow_router
 app.include_router(form_workflow_router)
 from app.application_package import router as application_package_router
 app.include_router(application_package_router)
+from app.document_requirements import router as document_requirements_router
+app.include_router(document_requirements_router)
 from app.applicant_profiles import router as applicant_profiles_router
 app.include_router(applicant_profiles_router)
 from app.applicant_history import router as applicant_history_router

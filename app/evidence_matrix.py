@@ -163,8 +163,20 @@ def request_missing(org_id: UUID, case_id: UUID, payload: RequestPlan,
         raise HTTPException(422, "Duplicate requirement keys")
     if any(key not in by_key for key in selected):
         raise HTTPException(422, "Unknown requirement key")
+    # A reviewed not-applicable decision must also block draft client requests.
+    from app.requirement_models import RequirementDecision
+    latest_decisions = db.scalars(select(RequirementDecision).where(
+        RequirementDecision.org_id == org_id,
+        RequirementDecision.case_id == case_id
+    ).order_by(RequirementDecision.revision.desc())).all()
+    applicability = {}
+    for decision in latest_decisions:
+        applicability.setdefault(decision.requirement_key, decision.decision)
     created, skipped = [], []
     for key in selected:
+        if applicability.get(key) == 'not_applicable':
+            skipped.append({'requirement_key': key, 'reason': 'Professional applicability decision: not applicable'})
+            continue
         item = by_key[key]
         if item["kind"] == "verified_facts" or item["status"] != "missing":
             skipped.append({"requirement_key": key, "reason": "Not a missing document requirement"})
