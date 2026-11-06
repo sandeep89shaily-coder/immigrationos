@@ -11,6 +11,7 @@ async function renderEngagement(){
  S.egStatus=status;S.egHeadings=headings;
  const screen=status.screen,draft=status.draft,proof=status.signed_copy;
  let buttons=btn('← Client directory','eg:back','smallbtn')+' '+btn('New conflict screen','eg:screen','primary smallbtn');
+ buttons+=' '+btn('Review agreement history','eg:history','smallbtn');
  if(screen&&screen.clear_for_drafting)buttons+=' '+btn('Draft service agreement','eg:draft','smallbtn');
  let profile='<div class="panel-body">'+keyValue('Client',client.first_name+' '+client.last_name)+
    keyValue('Contact',client.email||client.phone||'Not provided')+
@@ -147,6 +148,7 @@ async function egDownload(which){
 async function egAction(action){
  if(action==='eg:back'){S.engagementClientId=null;S.view='clients';return render()}
  if(action==='eg:screen')return egScreen();
+ if(action==='eg:history'){const history=await api(egPath()+'/history');let body='<h2>Immutable service agreement history</h2><p>Prior agreement versions are preserved. A newer revision or conflict screen requires independent professional reconciliation; this view does not decide legal validity.</p>';body+='<h3>Contract versions</h3><div class=panel-body>'+history.drafts.map(x=>'<div class=item-row><div><strong>Version '+x.version+'</strong> '+(x.currently_latest?'CURRENT DRAFT':'HISTORICAL')+'<div class=meta>SHA-256 '+h(x.sha256.slice(0,20))+'… · '+h(x.screen_still_latest?'Current screening':'OLD SCREEN')+'</div><div class=meta>Signed-copy: '+h(x.signed_copy.review_status||'Not received')+' · '+h(x.signed_copy.scan_status||'Not scanned')+'</div></div></div>').join('')+'</div>';body+='<h3>Conflict screen history</h3><div class=panel-body>'+history.screens.map(x=>'<div class=item-row><div><strong>'+h(x.conflict_status)+'</strong> · '+h(x.prior_rep)+'<div class=meta>'+h(x.reviewer_sub)+' · '+d(x.created_at)+' · '+h(x.currently_latest?'Current':'Superseded')+'</div></div></div>').join('')+'</div>';return modal(body,()=>{})}
  if(action==='eg:draft')return egDraft();
  if(action==='eg:upload')return egUpload();
  if(action==='eg:review')return egReview();
