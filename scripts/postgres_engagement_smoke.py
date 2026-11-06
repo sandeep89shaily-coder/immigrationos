@@ -6,9 +6,11 @@ synthetic signed-copy fixture.
 """
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
+import os
 from uuid import uuid4
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import text, create_engine
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.auth import Principal, get_principal
 from app.db import engine
@@ -17,6 +19,10 @@ from app.engagement import CLAUSES
 from app import engagement
 
 identity = {"sub": ""}
+# Isolated CI schema-administration connection seeds fictional teammate roles;
+# API requests below continue to run as the non-BYPASSRLS app database role.
+assert 'MIGRATION_DATABASE_URL' in os.environ
+schema_engine = create_engine(os.environ['MIGRATION_DATABASE_URL'])
 
 
 def principal():
@@ -53,6 +59,36 @@ try:
             })
             assert org.status_code == 201, (org.status_code, org.text)
             org_id = org.json()["id"]
+            owner_sub = identity["sub"]
+            assistant_sub = "assistant-pg-" + uuid4().hex
+            professional_sub = "consultant-pg-" + uuid4().hex
+            with schema_engine.begin() as privileged:
+                for sub, role in ((assistant_sub, "assistant"), (professional_sub, "consultant")):
+                    privileged.execute(text("""INSERT INTO memberships
+                        (id, org_id, subject, role, is_active, created_at)
+                        VALUES (:id, :org, :sub, :role, true, :now)"""), {
+                            "id": uuid4(), "org": org_id, "sub": sub,
+                            "role": role, "now": datetime.now(timezone.utc),
+                        })
+            # The limited API DB role must NOT be able to self-join another
+            # firm's membership table merely by changing PostgreSQL settings.
+            with engine.begin() as limited:
+                limited.execute(text("SELECT set_config('app.tenant_id', :tid, true)"),
+                                {"tid": str(org_id)})
+                limited.execute(text("SELECT set_config('app.principal_sub', :sub, true)"),
+                                {"sub": "uninvited-pg-" + str(n)})
+                try:
+                    with limited.begin_nested():
+                        limited.execute(text("""INSERT INTO memberships
+                            (id, org_id, subject, role, is_active, created_at)
+                            VALUES (:id, :org, :sub, 'owner', true, :now)"""), {
+                                "id": uuid4(), "org": org_id,
+                                "sub": "uninvited-pg-" + str(n), "now": datetime.now(timezone.utc),
+                            })
+                except SQLAlchemyError:
+                    pass
+                else:
+                    raise AssertionError("RLS failed to block uninvited staff self-enrolment")
             client = api.post(f"/api/v1/orgs/{org_id}/clients", json={
                 "first_name": "Synthetic", "last_name": "Client",
                 "email": f"synthetic-{n}@example.test",
@@ -98,11 +134,29 @@ try:
 
             case = api.post(base + "/open-matter", json={
                 "application_type": "work_permit", "title": "Synthetic work permit application",
-                "professional_sub": identity["sub"],
+                "professional_sub": professional_sub,
                 "confirm_engagement_and_professional_assignment": True,
             })
             assert case.status_code == 201, (case.status_code, case.text)
             assert case.json()["regulated_authority_independently_verified"] is False
+            case_id = case.json()["case_id"]
+            root = f"/api/v1/orgs/{org_id}/cases/{case_id}"
+            grant = api.post(root + "/staff/grants", json={
+                "subject": assistant_sub, "scope": "read"})
+            assert grant.status_code == 201, (grant.status_code, grant.text)
+            identity["sub"] = assistant_sub
+            assert api.get(root + "/facts").status_code == 200
+            assert api.post(root + "/tasks", json={"title": "Denied due to read grant"}).status_code == 403
+            identity["sub"] = professional_sub
+            assert api.get(root + "/facts").status_code == 200
+            assert len(api.get(f"/api/v1/orgs/{org_id}/cases").json()) == 1
+            identity["sub"] = owner_sub
+            revoked = api.post(root + "/staff/grants/" + grant.json()["id"] + "/revoke")
+            assert revoked.status_code == 200, (revoked.status_code, revoked.text)
+            identity["sub"] = assistant_sub
+            assert api.get(root + "/facts").status_code == 404
+            identity["sub"] = owner_sub
+            assert len(api.get(f"/api/v1/orgs/{org_id}/cases").json()) == 1
             assert len(api.get(base + "/matters").json()) == 1
             linked = api.get(f"/api/v1/orgs/{org_id}/engagements/cases/{case.json()['case_id']}")
             assert linked.status_code == 200, (linked.status_code, linked.text)
