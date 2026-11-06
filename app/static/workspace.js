@@ -116,7 +116,12 @@ async function renderCase(){const [cases,clients,tasks,issues,facts,docs,readine
   html+=`<p class=meta>Filing context: ${h(matrix.filing_context)} · Open evidence issues: ${matrix.open_evidence_issue_count}</p><div class=warning-text>${h(matrix.warning)}</div>`;
   if(matrix.source_recheck_required)html+='<div class=warning-text>Official sources require rechecking before use.</div>';
   html+=matrix.requirements.map(r=>`<div class=item-row><div class=bullet>▤</div><div style='flex:1'><div class=item-title>${h(r.title)}</div><div class=meta>${h(r.guidance)}</div><div class=meta><a href='${h(r.source_url)}' target='_blank' rel='noopener noreferrer'>Official IRCC source ↗</a>${r.requires_professional_applicability_review?' · Conditional applicability requires RCIC assessment':''}</div></div><div class=push>${chip(r.status)}</div></div>`).join('');
-  actions=btn('Create draft document requests','requestEvidence','primary smallbtn');
+  const reviewInfo=await api(q()+`/cases/${S.caseId}/reviews/history?filing_context=${encodeURIComponent(S.filingContext)}`);
+  S.latestReviewHash=reviewInfo.current.case_sha256;
+  const recent=reviewInfo.history[0];
+  if(recent)html+=`<div class=callout>Last staff review: ${h(recent.reviewer_sub)} · ${d(recent.created_at)} · ${recent.is_current?'Current evidence fingerprint':'STALE — evidence changed, review again'}. This is not IRCC approval.</div>`;
+  else html+='<div class=callout>No recorded staff review yet. Document sufficiency and legal applicability still require professional assessment.</div>';
+  actions=btn('Create draft document requests','requestEvidence','primary smallbtn')+' '+btn('Record staff evidence review','recordEvidenceReview','smallbtn');
  }else html+=empty('Select filing context','Choose inside or outside Canada to view case evidence coverage.');
  content=panel('RCIC study-permit evidence planning',`<div class=panel-body>${html}</div>`,actions);
 }
@@ -163,6 +168,12 @@ if(action==='requestEvidence'){
  if(!confirm('Create draft document requests? No client message is sent. Review requests before sharing.'))return;
  const result=await api(q()+`/cases/${S.caseId}/evidence/request-missing`,{method:'POST',body:{filing_context:S.filingContext}});
  await render();return toast(`${result.created.length} draft document requests created`);
+}
+if(action==='recordEvidenceReview'){
+ if(!S.filingContext||!S.latestReviewHash)return toast('Select filing context and refresh evidence first');
+ return modal(`<h2>Record staff evidence review</h2><p>This is an operational review record, NOT eligibility, verified RCIC licensing, or IRCC submission approval. Any later evidence changes will make the review stale.</p><form><label>Review note (at least 20 characters)<textarea name='review_note' required minlength='20' maxlength='1200' rows='4' style='display:block;width:100%'></textarea></label><p><label><input type='checkbox' name='sources_checked' required> I independently checked the current official IRCC instructions.</label></p><button type='submit' class='btn primary'>Record reviewed snapshot</button></form>`,async form=>{
+  await api(q()+`/cases/${S.caseId}/reviews/record`,{method:'POST',body:{filing_context:S.filingContext,expected_sha256:S.latestReviewHash,review_note:form.querySelector('[name=review_note]').value,reviewed_current_ircc_sources:form.querySelector('[name=sources_checked]').checked}});
+ });
 }
 if(action==='seedDemo'){if(!confirm('Create fictional demonstration clients, cases and evidence?'))return;await api(q()+'/demo-seed',{method:'POST'});await render();return toast('Sample cases created')}
  if(action==='newPortalInvite')return await newPortalInvite();if(action==='newPortalRequest')return newPortalRequest();if(action==='copyPortalToken'){if(S.inviteToken)await navigator.clipboard.writeText(S.inviteToken);return toast('Token copied to clipboard')}if(action==='newOrg')return newOrg();if(action==='newClient')return newClient();if(action==='newCase')return await newCase();if(action==='newTask')return newTask();if(action==='newFact')return newFact();if(action==='newDocument')return newDocument();if(action==='changeStatus')return changeStatus();if(action==='closeModal')return closeModal();
