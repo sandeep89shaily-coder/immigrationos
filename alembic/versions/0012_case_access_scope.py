@@ -70,6 +70,38 @@ def upgrade():
         GRANT EXECUTE ON FUNCTION crm_active_member_in_roles(uuid,text,text[])
             TO immigrationos_app;
         END IF; END $grant_role$""")
+    # The older membership INSERT policy let a DB session self-enrol into an
+    # arbitrary firm by setting tenant_id. Restrict bootstrap to the org creator
+    # and to its FIRST owner, before any membership exists. Future team joining
+    # must use a separately reviewed invitation workflow.
+    op.execute("""CREATE FUNCTION crm_can_bootstrap_owner(
+        p_org uuid, p_subject text
+    ) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path = pg_catalog, public
+    AS $bootstrap$
+        SELECT
+            p_org::text = current_setting('app.tenant_id', true)
+            AND p_subject = current_setting('app.principal_sub', true)
+            AND EXISTS (
+                SELECT 1 FROM public.organizations org
+                WHERE org.id = p_org AND org.created_by_sub = p_subject
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM public.memberships m WHERE m.org_id = p_org
+            )
+    $bootstrap$""")
+    op.execute("REVOKE ALL ON FUNCTION crm_can_bootstrap_owner(uuid,text) FROM PUBLIC")
+    op.execute("""DO $grant_bootstrap$ BEGIN
+        IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='immigrationos_app') THEN
+            GRANT EXECUTE ON FUNCTION crm_can_bootstrap_owner(uuid,text)
+                TO immigrationos_app;
+        END IF;
+    END $grant_bootstrap$""")
+    op.execute("DROP POLICY membership_insert ON memberships")
+    op.execute("""CREATE POLICY membership_insert ON memberships FOR INSERT
+        WITH CHECK (role='owner' AND is_active
+          AND subject = current_setting('app.principal_sub', true)
+          AND crm_can_bootstrap_owner(org_id, subject))""")
     op.execute("ALTER TABLE case_access_grants ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE case_access_grants FORCE ROW LEVEL SECURITY")
     base = """(case_access_grants.org_id::text = current_setting('app.tenant_id', true)
@@ -105,3 +137,8 @@ def downgrade():
     op.drop_table("case_access_grants")
     if op.get_bind().dialect.name == "postgresql":
         op.execute("DROP FUNCTION IF EXISTS crm_active_member_in_roles(uuid,text,text[])")
+        op.execute("DROP POLICY IF EXISTS membership_insert ON memberships")
+        op.execute("""CREATE POLICY membership_insert ON memberships FOR INSERT
+            WITH CHECK (subject = current_setting('app.principal_sub', true)
+              AND org_id::text = current_setting('app.tenant_id', true))""")
+        op.execute("DROP FUNCTION IF EXISTS crm_can_bootstrap_owner(uuid,text)")
