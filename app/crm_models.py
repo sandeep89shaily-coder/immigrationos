@@ -64,6 +64,7 @@ class Consultation(Base):
     __tablename__ = "crm_consultations"
     __table_args__ = (
         UniqueConstraint("org_id", "id", name="uq_crm_consultation_org_id"),
+        UniqueConstraint("org_id", "prospect_id", "id", name="uq_crm_consultation_prospect_id"),
         ForeignKeyConstraint(["org_id", "prospect_id"], ["crm_prospects.org_id", "crm_prospects.id"],
                              name="fk_crm_consultation_prospect"),
         CheckConstraint("status IN ('scheduled','completed','cancelled')", name="ck_crm_consultation_status"),
@@ -87,9 +88,10 @@ class ConsultationAgreement(Base):
     __tablename__ = "crm_consultation_agreements"
     __table_args__ = (
         UniqueConstraint("org_id", "id", name="uq_crm_agreement_org_id"),
+        UniqueConstraint("org_id", "prospect_id", "id", name="uq_crm_agreement_prospect_id"),
         ForeignKeyConstraint(["org_id", "prospect_id"], ["crm_prospects.org_id", "crm_prospects.id"],
                              name="fk_crm_agreement_prospect"),
-        ForeignKeyConstraint(["org_id", "consultation_id"], ["crm_consultations.org_id", "crm_consultations.id"],
+        ForeignKeyConstraint(["org_id", "prospect_id", "consultation_id"], ["crm_consultations.org_id", "crm_consultations.prospect_id", "crm_consultations.id"],
                              name="fk_crm_agreement_consultation"),
         Index("ix_crm_agreement_consultation", "org_id", "consultation_id", "created_at"),
     )
@@ -111,8 +113,8 @@ class ConsultationSignedCopy(Base):
         UniqueConstraint("org_id", "agreement_id", name="uq_crm_signed_copy_agreement"),
         ForeignKeyConstraint(["org_id", "prospect_id"], ["crm_prospects.org_id", "crm_prospects.id"],
                              name="fk_crm_signed_copy_prospect"),
-        ForeignKeyConstraint(["org_id", "agreement_id"], ["crm_consultation_agreements.org_id",
-                                                          "crm_consultation_agreements.id"],
+        ForeignKeyConstraint(["org_id", "prospect_id", "agreement_id"], ["crm_consultation_agreements.org_id",
+                                                          "crm_consultation_agreements.prospect_id", "crm_consultation_agreements.id"],
                              name="fk_crm_signed_copy_agreement"),
         CheckConstraint("scan_status IN ('quarantined','cleared','rejected')", name="ck_crm_copy_scan"),
         CheckConstraint("review_status IN ('pending','accepted','rejected')", name="ck_crm_copy_review"),
