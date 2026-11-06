@@ -94,6 +94,11 @@ def issue_invitation(org_id: UUID, payload: InviteInput,
     allow(access, MANAGERS)
     if payload.role == "admin" and access.role != Role.owner:
         raise HTTPException(403, "Only a firm owner may invite an administrator")
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        # Serialize competing issuers for the same organization/email. Without
+        # this, concurrent managers can create multiple live tokens.
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+                   {"key": f"staff-invite:{org_id}:{payload.email}"})
     known = db.scalar(select(Membership.id).where(
         Membership.org_id == org_id,
         func.lower(Membership.verified_email) == payload.email))
