@@ -121,6 +121,11 @@ def test_quarantined_document_cannot_supply_verified_form_fields(api):
     assert data["internal_preflight_status"] == "blocked"
     assert any("quarantined" in s for s in data["blockers"])
     assert all(f["value"] is None for f in data["fields"])
+    legacy_preview = client.get(
+        f"/api/v1/orgs/{org}/ircc/cases/{case}/forms/IMM1294/preview"
+        "?filing_context=outside_canada").json()
+    assert legacy_preview["excluded_untrusted_document_facts"] == 6
+    assert all(f["value"] is None for f in legacy_preview["fields"])
     assert client.post(_url(org, case).replace("?filing_context", "/acknowledge?filing_context"),
                        json={"snapshot_sha256": data["snapshot_sha256"]}).status_code == 409
 
