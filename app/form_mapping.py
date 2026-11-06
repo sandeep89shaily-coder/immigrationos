@@ -30,14 +30,14 @@ def resolve_verified_form_fields(
     documents: Iterable,
     scan_status_by_document: Mapping[UUID, str],
 ) -> ResolvedFieldPacket:
-    """Resolve one-to-one PDF field mappings against verified source documents.
+    """Resolve reviewed PDF field mappings against verified source documents.
 
     Every selected fact must be human-reviewed, case/tenant bound, document
     linked, and in a document with an explicitly cleared scan. No fallback to
     client answers, AI suggestions, stale snapshots, or a second tenant.
     """
-    if not field_to_canonical or len(field_to_canonical) != len(set(field_to_canonical.values())):
-        raise FormMappingBlocked("Review a nonempty unambiguous one-to-one mapping first")
+    if not field_to_canonical:
+        raise FormMappingBlocked("Review a nonempty template mapping first")
     allowed = {str(d.id): d for d in documents if d.org_id == org_id and d.case_id == case_id}
     candidates = {}
     for fact in facts:
