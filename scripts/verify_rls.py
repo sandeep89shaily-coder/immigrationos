@@ -78,7 +78,7 @@ with engine.connect() as conn:
                 raise AssertionError("RLS FAILED: non-member could insert client into another firm")
 
         tenant_tables = ["clients", "cases", "audit_events", "case_documents", "case_facts",
-                         "case_issues", "case_tasks", "fact_suggestions"]
+                         "case_issues", "case_tasks", "fact_suggestions", "evidence_review_snapshots"]
         policies = conn.execute(text("""SELECT relname, relrowsecurity, relforcerowsecurity
             FROM pg_class WHERE relname = ANY(:tables)"""), {"tables": tenant_tables}).all()
         assert len(policies) == len(tenant_tables), "RLS FAILED: missing tables"
@@ -86,6 +86,29 @@ with engine.connect() as conn:
         privileges = conn.execute(text("""SELECT has_table_privilege(current_user, 'audit_events', 'UPDATE'),
             has_table_privilege(current_user, 'audit_events', 'DELETE')""")).one()
         assert privileges == (False, False), "RLS FAILED: audit history is mutable"
+
+        snapshot_privileges = conn.execute(text("""SELECT
+            has_table_privilege(current_user, 'evidence_review_snapshots', 'SELECT'),
+            has_table_privilege(current_user, 'evidence_review_snapshots', 'INSERT'),
+            has_table_privilege(current_user, 'evidence_review_snapshots', 'UPDATE'),
+            has_table_privilege(current_user, 'evidence_review_snapshots', 'DELETE')""")).one()
+        assert snapshot_privileges == (True, True, False, False), \
+            "RLS FAILED: review history must be append-only"
+
+        # Positive control: a member can record a review for their own firm's case.
+        context(conn, principal_a, tenant_a)
+        conn.execute(text("""INSERT INTO evidence_review_snapshots (
+            id, org_id, case_id, filing_context, template_version, case_sha256,
+            reviewer_sub, review_note, open_issues_at_review, created_at)
+            VALUES (:id, :org, :case, 'outside_canada', 'synthetic-test', :hash,
+                    :reviewer, 'Synthetic reviewer note only', 0, :now)"""),
+            {'id': uuid4(), 'org': tenant_a, 'case': case_a, 'hash': '0'*64,
+             'reviewer': principal_a, 'now': now})
+        assert count(conn, 'evidence_review_snapshots') == 1
+        context(conn, principal_a, tenant_b)
+        assert count(conn, 'evidence_review_snapshots') == 0, \
+            "RLS FAILED: review history leaked across firms"
+
     finally:
         transaction.rollback()
 engine.dispose()

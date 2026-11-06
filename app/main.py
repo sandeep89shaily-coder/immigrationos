@@ -179,6 +179,8 @@ app.include_router(portal_router)
 app.include_router(portal_staff_router)
 app.include_router(ircc_registry_router)
 app.include_router(evidence_router)
+from app.review_snapshots import router as review_snapshots_router
+app.include_router(review_snapshots_router)
 STATIC_DIR = Path(__file__).resolve().parent / 'static'
 app.mount('/app/static', StaticFiles(directory=STATIC_DIR), name='workspace-static')
 

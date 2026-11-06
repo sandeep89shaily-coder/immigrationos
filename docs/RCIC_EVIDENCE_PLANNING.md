@@ -95,3 +95,41 @@ Next: professionally reviewed condition trees, source-effective dating, client
 questionnaire branching, explicit exemption decisions with RCIC review trail,
 evidence-linked form-field mapping, and review-signoff snapshots invalidated
 when the underlying evidence changes.
+
+
+## Evidence review snapshots (next development increment)
+
+A staff reviewer with the owner/admin/consultant role can record an operational
+review, together with a note and explicit acknowledgment that they independently
+checked current official IRCC instructions.
+
+- GET \`/api/v1/orgs/{org_id}/cases/{case_id}/reviews/current?filing_context=outside_canada\`
+  returns an evidence fingerprint and current review context.
+- GET \`/api/v1/orgs/{org_id}/cases/{case_id}/reviews/history?filing_context=outside_canada\`
+  returns at most 25 historical reviews and whether each still matches the
+  current evidence fingerprint.
+- POST \`/api/v1/orgs/{org_id}/cases/{case_id}/reviews/record\` with
+  \`{"filing_context":"outside_canada","expected_sha256":"<current hash>",
+  "review_note":"At least 20 characters of rationale",
+  "reviewed_current_ircc_sources":true}\` records a staff review.
+
+The fingerprint uses a canonical SHA-256 representation of case status, source
+document IDs and hashes, verified/pending facts, unresolved issues, tasks,
+document requests, portal malware-scan dispositions, and template version.
+The plaintext fact data is **not** stored in audit events. Hashes are not
+a digital signature, proof of authenticity, or proof of document completeness.
+
+Review history is append-only: PostgreSQL RLS requires an active firm membership
+to read, an active owner/admin/consultant membership to insert, and the limited
+application role has no UPDATE or DELETE privileges.
+
+Any later change to included evidence or its status makes the earlier review
+stale. An old \`expected_sha256\` causes an HTTP 409 instead of recording a
+review against outdated evidence. This is a concurrency safeguard, but does not
+replace document-lock coordination or transaction-serializable validation
+across all possible simultaneous writers.
+
+**This is NOT legal approval or a professional credential attestation.** The
+application does not independently confirm that the reviewer is a CICC-licensed
+RCIC. It does not approve a government application, and it never authorizes
+submission to IRCC.
