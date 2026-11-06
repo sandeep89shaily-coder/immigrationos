@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.access import AUDIT_ROLES, READ_ROLES, WRITE_ROLES, OrgAccess, allow, get_org_access
-from app.case_scope import visible_case_filter
+from app.case_scope import visible_case_filter, visible_client_filter
 from app.auth import Principal, get_principal
 from app.db import get_db, set_db_context
 from app.models import AuditEvent, Case, Client, Membership, Organization
@@ -97,7 +97,8 @@ def create_client(org_id: UUID, payload: ClientCreate, db: Session = Depends(get
 def list_clients(org_id: UUID, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0, le=10000),
                  db: Session = Depends(get_db), access: OrgAccess = Depends(get_org_access)):
     allow(access, READ_ROLES)
-    return db.scalars(select(Client).where(Client.org_id == org_id)
+    return db.scalars(select(Client).where(
+                          visible_client_filter(org_id, access.principal.sub, access.role))
                       .order_by(Client.created_at, Client.id).offset(offset).limit(limit)).all()
 
 
