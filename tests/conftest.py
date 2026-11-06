@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
 from app.auth import Principal, get_principal
+from app import portal_models  # register portal tables
 from app.db import Base, engine, get_db
 from app.main import app
 
@@ -21,14 +22,14 @@ def api():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
-    subject = {"sub": "test-user-a"}
+    subject = {"sub": "test-user-a", "email": None, "email_verified": False}
 
     def override_db():
         with factory() as db:
             yield db
 
     def override_principal():
-        return Principal(sub=subject["sub"])
+        return Principal(sub=subject["sub"], email=subject["email"], email_verified=subject["email_verified"])
 
     app.dependency_overrides[get_db] = override_db
     app.dependency_overrides[get_principal] = override_principal
