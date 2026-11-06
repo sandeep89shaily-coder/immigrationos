@@ -15,6 +15,7 @@ from app.access import OrgAccess, READ_ROLES, WRITE_ROLES, allow, get_org_access
 from app.db import get_db
 from app.main import record_event
 from app.models import Case, CaseDocument, CaseFact, CaseIssue, CaseTask, Client, FactSuggestion
+from app.portal_models import PortalSubmission
 from app.schemas import Role
 from app.storage import MAX_BYTES, delete_failed_blob, load_blob, save_blob
 from app.extraction import propose_facts
@@ -49,6 +50,11 @@ def existing_document(db: Session, org_id: UUID, case_id: UUID, document_id: UUI
                                                CaseDocument.id == document_id))
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found in this case")
+    quarantined = db.scalar(select(PortalSubmission).where(PortalSubmission.org_id == org_id,
+        PortalSubmission.case_id == case_id, PortalSubmission.document_id == document_id,
+        PortalSubmission.scan_status != "cleared"))
+    if quarantined is not None:
+        raise HTTPException(status_code=423, detail="Client document quarantined pending malware scanning")
     return doc
 
 
