@@ -46,7 +46,7 @@ class FamilyMember(Base):
 class CaseAnswerDraft(Base):
     __tablename__ = "case_answer_drafts"
     __table_args__ = (
-        ForeignKeyConstraint(["org_id", "case_id"], ["cases.org_id", "cases.id"], name="fk_answer_draft_case"),
+        ForeignKeyConstraint(["org_id", "client_id", "case_id"], ["cases.org_id", "cases.client_id", "cases.id"], name="fk_answer_draft_case_client"),
         ForeignKeyConstraint(["org_id", "client_id"], ["clients.org_id", "clients.id"], name="fk_answer_draft_client"),
         CheckConstraint("form_code IN ('IMM1294','IMM5709')", name="ck_answer_draft_form"),
         Index("ix_answer_draft_case", "org_id", "case_id", "created_at"),
