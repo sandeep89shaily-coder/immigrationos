@@ -1,11 +1,6 @@
 name: IRCC form catalog observation (review only)
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'app/catalog_import.py'
-      - 'scripts/observe_ircc_catalog.py'
-      - '.github/workflows/ircc-form-observation.yml'
   schedule:
     - cron: "19 12 * * 1"
 permissions:
