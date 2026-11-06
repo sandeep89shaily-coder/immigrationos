@@ -37,6 +37,39 @@ def upgrade():
     if op.get_bind().dialect.name != "postgresql":
         return
 
+    # Narrow SECURITY DEFINER helper: the runtime role can normally SELECT only
+    # its own membership row. Checking a prospective teammate requires a
+    # reviewer-scoped lookup without granting unrestricted membership reads.
+    # The migration owner (not the app role) owns this function.
+    op.execute("""CREATE FUNCTION crm_active_member_in_roles(
+        p_org uuid, p_target text, p_roles text[]
+    ) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path = pg_catalog, public
+    AS $
+        SELECT
+            p_org::text = current_setting('app.tenant_id', true)
+            AND EXISTS (
+                SELECT 1 FROM public.memberships actor
+                WHERE actor.org_id = p_org
+                  AND actor.subject = current_setting('app.principal_sub', true)
+                  AND actor.is_active
+                  AND actor.role IN ('owner','admin','consultant')
+            )
+            AND EXISTS (
+                SELECT 1 FROM public.memberships target
+                WHERE target.org_id = p_org
+                  AND target.subject = p_target
+                  AND target.is_active
+                  AND target.role = ANY (p_roles)
+            )
+    $""")
+    op.execute("REVOKE ALL ON FUNCTION crm_active_member_in_roles(uuid,text,text[]) FROM PUBLIC")
+    op.execute("""DO $ BEGIN IF EXISTS(SELECT 1 FROM pg_roles
+        WHERE rolname='immigrationos_app') THEN
+        GRANT EXECUTE ON FUNCTION crm_active_member_in_roles(uuid,text,text[])
+            TO immigrationos_app;
+        END IF; END $""")
     op.execute("ALTER TABLE case_access_grants ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE case_access_grants FORCE ROW LEVEL SECURITY")
     base = """(case_access_grants.org_id::text = current_setting('app.tenant_id', true)
@@ -53,10 +86,8 @@ def upgrade():
     op.execute(f"""CREATE POLICY case_access_insert ON case_access_grants FOR INSERT WITH CHECK
         ({reviewers} AND granted_by_sub = current_setting('app.principal_sub', true)
          AND revoked_at IS NULL AND revoked_by_sub IS NULL
-         AND EXISTS (SELECT 1 FROM memberships target
-             WHERE target.org_id = case_access_grants.org_id
-               AND target.subject = case_access_grants.subject
-               AND target.is_active AND target.role = 'assistant'))""")
+         AND crm_active_member_in_roles(case_access_grants.org_id,
+             case_access_grants.subject, ARRAY['assistant']::text[]))""")
     op.execute(f"""CREATE POLICY case_access_revoke ON case_access_grants FOR UPDATE
         USING ({reviewers} AND revoked_at IS NULL)
         WITH CHECK ({reviewers} AND revoked_at IS NOT NULL
@@ -72,3 +103,5 @@ def downgrade():
     op.drop_index("ix_case_access_subject_active", table_name="case_access_grants")
     op.drop_index("uq_case_access_active_subject", table_name="case_access_grants")
     op.drop_table("case_access_grants")
+    if op.get_bind().dialect.name == "postgresql":
+        op.execute("DROP FUNCTION IF EXISTS crm_active_member_in_roles(uuid,text,text[])")
