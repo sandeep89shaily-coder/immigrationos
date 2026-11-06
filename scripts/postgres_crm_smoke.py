@@ -62,6 +62,17 @@ try:
             assert prepared.status_code == 201, (prepared.status_code, prepared.text)
             assert prepared.json()["status"] == "draft_not_signed"
             assert api.post(appointments + f"/{appt_id}/complete").status_code == 409
+            tasks = f"{base}/{org_id}/crm/prospects/{prospect_id}/follow-ups"
+            due = datetime.now(timezone.utc) + timedelta(days=5)
+            task = api.post(tasks, json={
+                "title": "Recontact fictional lead", "due_at": due.isoformat(),
+                "priority": "normal",
+            })
+            assert task.status_code == 201, (task.status_code, task.text)
+            assert api.get(f"{base}/{org_id}/crm/follow-ups").json()["items"]
+            completed = api.post(tasks + f"/{task.json()['id']}/complete")
+            assert completed.status_code == 200, (completed.status_code, completed.text)
+            assert completed.json()["status"] == "completed"
             principals.append((identity["sub"], org_id, prospect_id))
 
         for who, own_org, own_prospect in principals:
@@ -70,6 +81,7 @@ try:
             assert mine.status_code == 200 and len(mine.json()) == 1
             other_org, other_prospect = next((org, p) for user, org, p in principals if org != own_org)
             assert api.get(f"{base}/{other_org}/crm/prospects").status_code == 404
+            assert api.get(f"{base}/{other_org}/crm/follow-ups").status_code == 404
             assert api.get(f"{base}/{other_org}/crm/prospects/{other_prospect}").status_code == 404
             assert api.get(f"{base}/{own_org}/crm/prospects/{other_prospect}").status_code == 404
 finally:
