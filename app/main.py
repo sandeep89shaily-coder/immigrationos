@@ -183,6 +183,8 @@ app.include_router(ircc_registry_router)
 app.include_router(form_preflight_router)
 from app.form_coverage import router as form_coverage_router
 app.include_router(form_coverage_router)
+from app.crm import router as crm_router
+app.include_router(crm_router)
 from app.form_inspection_api import router as form_inspection_router
 app.include_router(form_inspection_router)
 from app.form_workflow_profiles import router as form_workflow_router
