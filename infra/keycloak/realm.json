@@ -43,7 +43,9 @@
       "standardFlowEnabled": true,
       "redirectUris": [
         "http://localhost:8000/app",
-        "http://127.0.0.1:8000/app"
+        "http://127.0.0.1:8000/app",
+        "http://localhost:8000/client",
+        "http://127.0.0.1:8000/client"
       ],
       "webOrigins": [
         "http://localhost:8000",
@@ -78,6 +80,21 @@
         {
           "type": "password",
           "value": "DemoOnly-ChangeMe2026!",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "client.demo",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "sample.person@example.test",
+      "firstName": "Synthetic",
+      "lastName": "Client",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "DemoOnly-Client2026!",
           "temporary": false
         }
       ]
