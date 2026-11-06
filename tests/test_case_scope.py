@@ -235,4 +235,4 @@ def test_all_firm_scoped_case_routes_share_authorization_dependency():
         dependencies = {dependency.call for dependency in route.dependant.dependencies}
         assert get_org_access in dependencies, "Unprotected case route: " + route.path
         checked.append(route.path)
-    assert len(checked) >= 25
+    assert len(checked) >= 25, [(r.path, r.name) for r in app.routes if 'case_id' in r.path]
