@@ -265,6 +265,34 @@ def create_activity(org_id: UUID, prospect_id: UUID, payload: ActivityInput,
     return {"id": str(event.id), "recorded_only": True, "message_sent": False}
 
 
+class CloseProspectInput(BaseModel):
+    reason: str = Field(min_length=5, max_length=500)
+
+
+@router.post("/prospects/{prospect_id}/close")
+def close_prospect(org_id: UUID, prospect_id: UUID, payload: CloseProspectInput,
+                   db: Session = Depends(get_db), access: OrgAccess = Depends(get_org_access)):
+    """Close a lost/no-longer-interested prospect without deleting history."""
+    allow(access, REVIEW)
+    entry = _prospect(db, org_id, prospect_id, lock=True)
+    if entry.stage in ("closed", "converted"):
+        raise HTTPException(409, "Prospect is already closed or converted")
+    scheduled = db.scalar(select(Consultation.id).where(
+        Consultation.org_id == org_id, Consultation.prospect_id == prospect_id,
+        Consultation.status == "scheduled"))
+    if scheduled is not None:
+        raise HTTPException(409, "Cancel any scheduled consultation before closing")
+    event = ProspectActivity(org_id=org_id, prospect_id=prospect_id,
+                             kind="note", content="Prospect closed: " + payload.reason,
+                             created_by_sub=access.principal.sub)
+    db.add(event)
+    entry.stage = "closed"
+    db.flush()
+    _event(db, access, "crm.prospect_closed", "prospect", entry.id)
+    db.commit()
+    return {"stage": "closed", "history_retained": True}
+
+
 @router.get("/prospects/{prospect_id}/consultations", response_model=list[ConsultationRead])
 def list_consultations(org_id: UUID, prospect_id: UUID, db: Session = Depends(get_db),
                        access: OrgAccess = Depends(get_org_access)):
