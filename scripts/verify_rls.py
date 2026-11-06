@@ -118,6 +118,22 @@ with engine.connect() as conn:
         assert crm_followup_privileges == (False, False, False, True), \
             "RLS FAILED: follow-up due dates or assignees can be altered"
 
+        engagement_privileges = conn.execute(text("""SELECT
+            has_table_privilege(current_user, 'engagement_screens', 'UPDATE'),
+            has_table_privilege(current_user, 'engagement_screens', 'DELETE'),
+            has_table_privilege(current_user, 'service_agreement_drafts', 'UPDATE'),
+            has_table_privilege(current_user, 'service_agreement_drafts', 'DELETE'),
+            has_table_privilege(current_user, 'matter_assignments', 'UPDATE'),
+            has_table_privilege(current_user, 'matter_assignments', 'DELETE'),
+            has_column_privilege(current_user, 'service_signed_copies', 'sha256', 'UPDATE'),
+            has_column_privilege(current_user, 'service_signed_copies', 'draft_id', 'UPDATE'),
+            has_column_privilege(current_user, 'service_signed_copies', 'review_status', 'UPDATE')
+        """)).one()
+        assert engagement_privileges == (
+            False, False, False, False, False, False, False, False, True
+        ), "RLS FAILED: signed agreement or immutable professional record could be overwritten"
+
+
 
 
         # Positive control: a member can record a review for their own firm's case.
