@@ -24,6 +24,7 @@ async function renderCRM(){
  if(consultation){
    let body=`<div class=panel-body>${keyValue('Date',d(consultation.starts_at))}${keyValue('Professional',consultation.professional_sub)}${keyValue('Status',consultation.status)}`;
    if(consultation.status==='scheduled'){
+     body+=btn('Cancel appointment','crm:cancel','smallbtn');
      body+='<div class=callout>The CICC Code generally requires a signed written consultation agreement before an initial regulated consultation. This system does not verify RCIC credentials or electronic signatures.</div>';
      if(!current)body+=btn('Prepare consultation agreement','crm:agreement','primary smallbtn');
      else{
@@ -98,6 +99,7 @@ async function crmAction(action){
  if(action==='crm:draft')return crmDownload('draft');
  if(action==='crm:signed')return crmDownload('signed');
  const c=S.crmConsultation,a=S.crmAgreement;
+ if(action==='crm:cancel'){if(!confirm('Cancel the scheduled consultation?'))return;await api(crmPath()+'/consultations/'+c.id+'/cancel',{method:'POST'});await render();return toast('Consultation cancelled')}
  if(action==='crm:scan'){const r=await api(crmPath()+'/consultations/'+c.id+'/agreements/'+a.id+'/scan',{method:'POST'});await render();return toast('Scan status: '+r.scan_status)}
  if(action==='crm:complete'){if(!confirm('Record consultation as complete after reviewing the signed agreement?'))return;await api(crmPath()+'/consultations/'+c.id+'/complete',{method:'POST'});await render();return toast('Consultation recorded as completed')}
  if(action==='crm:convert'){if(!confirm('Convert this fictional prospect to a client? Further consulting needs a separate service agreement.'))return;const r=await api(crmPath()+'/convert',{method:'POST'});await render();return toast('Client record linked: '+r.client_id.slice(0,8))}
