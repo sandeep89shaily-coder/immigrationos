@@ -73,15 +73,14 @@ def test_tasks_dashboard_and_permissions(api):
     who['sub']='assistant-user'
     with factory() as db:
         db.add(Membership(org_id=UUID(org),subject='assistant-user',role='assistant',is_active=True));db.commit()
-    assert client.post(path+'/tasks',json={'title':'Send fictional reminder'}).status_code==201
+    assert client.post(path+'/tasks',json={'title':'Send fictional reminder'}).status_code==404
     fact=client.post(path+'/facts',json={'field_path':'identity.birth_country','value':'Atlantis'})
-    assert fact.status_code==201
-    assert client.post(path+'/facts/'+fact.json()['id']+'/review',json={'status':'verified'}).status_code==403
+    assert fact.status_code==404
     who['sub']='viewer-user'
     with factory() as db:
         db.add(Membership(org_id=UUID(org),subject='viewer-user',role='viewer',is_active=True));db.commit()
-    assert client.post(path+'/tasks',json={'title':'Viewer cannot create'}).status_code==403
-    assert client.post(path+'/facts',json={'field_path':'identity.name','value':'test'}).status_code==403
+    assert client.post(path+'/tasks',json={'title':'Viewer cannot create'}).status_code==404
+    assert client.post(path+'/facts',json={'field_path':'identity.name','value':'test'}).status_code==404
 
 
 def test_document_encryption_access_and_file_validation(api, monkeypatch, tmp_path):

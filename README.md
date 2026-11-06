@@ -4,6 +4,35 @@
 
 A real FastAPI/PostgreSQL case-and-evidence workspace with OIDC sign-in, tenant-isolated records, a consultant dashboard, encrypted local development uploads, traceable fact suggestions, discrepancy detection, human review, internal form worksheets and task tracking. The code evolves the previously delivered v0.2 foundation; it does **not** reuse the v0.1 single-file Flask demo.
 
+## Case assignment and engagement enforcement (development milestone)
+
+ImmigrationOS now checks **case-specific staff access** across the firm case
+API. Owners/admins retain practice-wide management access; consultants may
+see their own professionally assigned cases; assistants require a separate
+per-case \`read\` or \`intake\` grant. Viewers and unassigned firm members
+cannot browse confidential case records. Case lists, global task and issue
+queues, client contact lists and practice dashboard counts respect staff
+scope rather than leaking another case's existence.
+
+In \`ENVIRONMENT=production\`, **legacy direct case creation is blocked**
+and case-writing endpoints require a current, manually accepted signed
+service engagement. In development/test, old synthetic demo cases remain
+readable by owners/admins and usable for regression tests; they do not
+represent authorized real cases.
+
+The **case overview** includes an assistant access-management dialog for
+development firm members. Grants can be revoked, after which case access
+is immediately denied. The database also restricts first-owner membership
+bootstrap so uninvited users cannot simply self-enroll by selecting another
+tenant ID.
+
+**This is not production-ready:** the API provides case-scope checks, but
+not all underlying tables have case-specific RLS. Real-client deployment
+still needs a full privilege/privacy review, secure staff invitations,
+professional-licence checks, audit and key-management acceptance.
+
+See [case-scope security design, controls and remaining gaps](docs/CASE_SCOPE_ENFORCEMENT_V1.md).
+
 ## RCIC service engagement workflow (synthetic development)
 
 The **Clients** directory now opens a **Service Engagement** workflow for each

@@ -109,7 +109,7 @@ async function renderCase(){const [cases,clients,tasks,issues,facts,docs,readine
  const tabs=['overview','evidence','planning','intake','documents','suggestions','worksheet','preflight','representative','tasks','issues','portal'];
  let content='';
  if(S.tab==='overview') content=`${gateWidget(readiness)}<div class="two-col">${panel('Matter details',`<div class="panel-body">${keyValue('Application type',c.application_type.replaceAll('_',' '))}${keyValue('Client',client?client.first_name+' '+client.last_name:'Unknown')}${keyValue('Opened',d(c.created_at))}${keyValue('Status',c.status)}</div>`)}${panel('Evidence summary',`<div class="panel-body">${keyValue('Verified facts',String(readiness.verified_facts))}${keyValue('Pending verification',String(readiness.pending_facts))}${keyValue('Open exceptions',String(readiness.open_issues))}${keyValue('Documents uploaded',String(readiness.documents))}</div>`)}</div>`;
- if(S.tab==='overview'){const eg=await api(q()+'/engagements/cases/'+S.caseId);const condition=eg.has_current_reviewed_signed_agreement?'Current staff-reviewed agreement attached':'REVIEW REQUIRED — '+eg.warning;content='<div class="callout">'+h(condition)+'</div>'+content;}
+ if(S.tab==='overview'){const eg=await api(q()+'/engagements/cases/'+S.caseId);const condition=eg.has_current_reviewed_signed_agreement?'Current staff-reviewed agreement attached':'REVIEW REQUIRED — '+eg.warning;const role=S.orgs.find(x=>x.id===S.org)?.role;const manager=['owner','admin','consultant'].includes(role);content='<div class="callout">'+h(condition)+'</div>'+(!eg.engagement_link_missing&&manager?'<p>'+btn('Manage case assistant access','scope:team','smallbtn')+'</p>':'')+content;}
  if(S.tab==='evidence')content=panel('Case facts and human verification',`<div class="panel-body">${facts.length?facts.map(factItem).join(''):empty('No evidence facts','Add a manually documented fact to begin the evidence record.')}</div>`,btn('+ Add fact','newFact','primary smallbtn'));
  if(S.tab==='planning'){
  let html='<div class=callout>Select the filing context. This operational checklist is non-exhaustive and always requires RCIC review.</div><p>'+btn('Outside Canada','filingContext:outside_canada','smallbtn')+' '+btn('Inside Canada','filingContext:inside_canada','smallbtn')+'</p>';
@@ -214,7 +214,23 @@ const selectField=(name,label,options)=>`<div class="form-field"><label>${h(labe
 const actions=label=>`<div class="actions"><button type="button" class="btn" data-action="closeModal">Cancel</button><button type="submit" class="btn primary">${h(label)}</button></div>`;
 function newOrg(){modal(`<h2>Create a practice</h2><p>Start with a fictional organization in your local development environment.</p><form>${fld('name','Firm name','text','required minlength="2" placeholder="e.g. Northstar Demo Immigration"')}${fld('slug','Short unique ID','text','required minlength="3" pattern="[a-z][a-z0-9-]*" placeholder="northstar-demo"')}${actions('Create practice')}</form>`,async f=>{const o=await api('/api/v1/orgs',{method:'POST',body:values(f)});S.org=o.id;sessionStorage.setItem('ios_org',S.org)})}
 function newClient(){modal(`<h2>Add a client</h2><p>Fictional test data only — do not enter real client information.</p><form><div class="form-grid">${fld('first_name','First name','text','required')}${fld('last_name','Last name','text','required')}</div>${fld('email','Email','email')}${fld('phone','Phone')}${actions('Add client')}</form>`,async f=>{let v=values(f);v.email=v.email||null;v.phone=v.phone||null;await api(q()+'/clients',{method:'POST',body:v})})}
-async function newCase(){const clients=await api(q()+'/clients?limit=100');if(!clients.length){toast('Add a fictional client first');return newClient()}
+async function manageCaseTeam(){
+ const root=q()+'/cases/'+encodeURIComponent(S.caseId)+'/staff/grants';
+ const grants=await api(root);
+ let body='<h2>Assistant case access</h2><p>Only active assistants already enrolled in this firm can be granted access. A grant is scoped to this case and does not authorize immigration advice.</p>';
+ body+='<div class="panel-body">'+(grants.length?grants.map(g=>
+   '<div class="item-row"><div><strong>'+h(g.subject)+'</strong> · '+h(g.scope)+
+   '<div class="meta">'+(g.revoked_at?'Revoked':'Active')+'</div></div>'+
+   (!g.revoked_at?btn('Revoke','scope:revoke:'+g.id,'smallbtn'):'')+'</div>').join(''):
+   '<p>No assistant permissions have been granted.</p>')+'</div>';
+ body+='<form><h3>Grant an active assistant</h3>'+
+   fld('subject','Existing assistant identity subject','text','required minlength="3" maxlength="255"')+
+   selectField('scope','Permission',[['read','Read-only'],['intake','Read and intake changes']])+
+   actions('Grant scoped access')+'</form>';
+ modal(body,async form=>{await api(root,{method:'POST',body:values(form)})});
+}
+
+async function newCase(){if(S.config?.environment==='production'){S.view='clients';S.caseId=null;toast('Open the client engagement and complete a signed service agreement first.');return render()};const clients=await api(q()+'/clients?limit=100');if(!clients.length){toast('Add a fictional client first');return newClient()}
  modal(`<h2>Open a matter</h2><p>Associate a new application with an existing client.</p><form>${selectField('client_id','Client',clients.map(c=>[c.id,c.first_name+' '+c.last_name]))}${selectField('application_type','Application category',[['study_permit','Study permit'],['work_permit','Work permit'],['visitor_visa','Visitor visa'],['express_entry','Express Entry'],['sponsorship','Family sponsorship'],['other','Other']])}${fld('title','Matter title','text','required minlength="2" placeholder="e.g. Study permit · September intake"')}${actions('Create matter')}</form>`,async f=>{const c=await api(q()+'/cases',{method:'POST',body:values(f)});S.caseId=c.id;S.tab='overview'})}
 function newPortalRequest(){modal(`<h2>Request a client document</h2><p>Only linked client identities can see this request. Synthetic data only.</p><form>${fld('title','Document request title','text','required minlength="3"')}${selectField('document_type','Type',[['passport','Passport'],['employment_letter','Employment letter'],['education','Education'],['finance','Financial evidence'],['other','Other']])}${fld('instructions','Instructions','text','maxlength="1200"')}${fld('due_at','Due date','date')}${actions('Create document request')}</form>`,async f=>{const data=values(f);data.due_at=data.due_at?new Date(data.due_at+'T12:00:00Z').toISOString():null;await api(q()+`/cases/${S.caseId}/portal/requests`,{method:'POST',body:data})})}
 async function newPortalInvite(){if(!confirm('Create a single-use invitation valid for 48 hours? The client must sign in with the matching verified email.'))return;
@@ -261,7 +277,10 @@ if(action==='recordEvidenceReview'){
  });
 }
 if(action==='seedDemo'){if(!confirm('Create fictional demonstration clients, cases and evidence?'))return;await api(q()+'/demo-seed',{method:'POST'});await render();return toast('Sample cases created')}
- if(action==='newPortalInvite')return await newPortalInvite();if(action==='newPortalRequest')return newPortalRequest();if(action==='copyPortalToken'){if(S.inviteToken)await navigator.clipboard.writeText(S.inviteToken);return toast('Token copied to clipboard')}if(action==='newOrg')return newOrg();if(action==='newClient')return newClient();if(action==='newCase')return await newCase();if(action==='newTask')return newTask();if(action==='newFact')return newFact();if(action==='newDocument')return newDocument();if(action==='changeStatus')return changeStatus();if(action==='closeModal')return closeModal();
+ if(action==='newPortalInvite')return await newPortalInvite();if(action==='newPortalRequest')return newPortalRequest();if(action==='copyPortalToken'){if(S.inviteToken)await navigator.clipboard.writeText(S.inviteToken);return toast('Token copied to clipboard')}if(action==='newOrg')return newOrg();if(action==='newClient')return newClient();if(action==='scope:team')return await manageCaseTeam();
+ if(action.startsWith('scope:revoke:')){if(!confirm('Revoke this assistant’s case access?'))return;const id=action.split(':')[2];await api(q()+'/cases/'+encodeURIComponent(S.caseId)+'/staff/grants/'+encodeURIComponent(id)+'/revoke',{method:'POST'});return manageCaseTeam()}
+
+ if(action==='newCase')return await newCase();if(action==='newTask')return newTask();if(action==='newFact')return newFact();if(action==='newDocument')return newDocument();if(action==='changeStatus')return changeStatus();if(action==='closeModal')return closeModal();
  if(action==='backCases'||action==='goCases'){S.caseId=null;S.view='cases';return await render()}
  if(action==='goTasks'){S.caseId=null;S.view='tasks';return await render()}
  if(action==='goReview'){S.caseId=null;S.view='review';return await render()}

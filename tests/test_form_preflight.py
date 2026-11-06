@@ -101,9 +101,9 @@ def test_only_reviewer_roles_can_acknowledge_and_tenant_isolation(api):
                           role="assistant", is_active=True))
         db.commit()
     who["sub"] = "assistant-user"
-    assert client.get(url).status_code == 200
+    assert client.get(url).status_code == 404  # No active case-specific grant.
     ack_url = url.replace("?filing_context", "/acknowledge?filing_context")
-    assert client.post(ack_url, json={"snapshot_sha256": digest}).status_code == 403
+    assert client.post(ack_url, json={"snapshot_sha256": digest}).status_code == 404
     who["sub"] = "unrelated-person"
     assert client.get(url).status_code == 404
     assert client.post(ack_url, json={"snapshot_sha256": digest}).status_code == 404

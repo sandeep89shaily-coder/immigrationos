@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.access import OrgAccess, READ_ROLES, WRITE_ROLES, allow, get_org_access
+from app.case_scope import MANAGERS, visible_case_ids, visible_client_filter
 from app.db import get_db
 from app.main import record_event
 from app.models import Case, CaseDocument, CaseFact, CaseIssue, CaseTask, Client, FactSuggestion
@@ -61,8 +62,17 @@ def existing_document(db: Session, org_id: UUID, case_id: UUID, document_id: UUI
 @router.get("/dashboard", response_model=DashboardRead)
 def dashboard(org_id: UUID, db: Session = Depends(get_db), access: OrgAccess = Depends(get_org_access)):
     allow(access, READ_ROLES)
+    scope = visible_case_ids(org_id, access.principal.sub, access.role)
     def count(model, *conditions):
-        return db.scalar(select(func.count()).select_from(model).where(model.org_id == org_id, *conditions)) or 0
+        stmt = select(func.count()).select_from(model).where(model.org_id == org_id, *conditions)
+        if access.role not in MANAGERS:
+            if model is Case:
+                stmt = stmt.where(Case.id.in_(scope))
+            elif model is Client:
+                stmt = stmt.where(visible_client_filter(org_id, access.principal.sub, access.role))
+            else:
+                stmt = stmt.where(model.case_id.in_(scope))
+        return db.scalar(stmt) or 0
     return DashboardRead(
         clients=count(Client), cases=count(Case), in_review=count(Case, Case.status == 'review'),
         open_tasks=count(CaseTask, CaseTask.status == 'open'),
@@ -75,6 +85,9 @@ def dashboard(org_id: UUID, db: Session = Depends(get_db), access: OrgAccess = D
 def organization_tasks(org_id: UUID, status: str = Query('open', pattern=r'^(open|complete|all)$'),
                        db: Session = Depends(get_db), access: OrgAccess = Depends(get_org_access)):
     q = select(CaseTask).where(CaseTask.org_id == org_id)
+    if access.role not in MANAGERS:
+        q = q.where(CaseTask.case_id.in_(
+            visible_case_ids(org_id, access.principal.sub, access.role)))
     if status != 'all':
         q = q.where(CaseTask.status == status)
     return db.scalars(q.order_by(CaseTask.due_at, CaseTask.created_at).limit(200)).all()
@@ -84,6 +97,9 @@ def organization_tasks(org_id: UUID, status: str = Query('open', pattern=r'^(ope
 def organization_issues(org_id: UUID, status: str = Query('open', pattern=r'^(open|resolved|dismissed|all)$'),
                         db: Session = Depends(get_db), access: OrgAccess = Depends(get_org_access)):
     q = select(CaseIssue).where(CaseIssue.org_id == org_id)
+    if access.role not in MANAGERS:
+        q = q.where(CaseIssue.case_id.in_(
+            visible_case_ids(org_id, access.principal.sub, access.role)))
     if status != 'all':
         q = q.where(CaseIssue.status == status)
     return db.scalars(q.order_by(CaseIssue.created_at.desc()).limit(200)).all()

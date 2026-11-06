@@ -112,8 +112,8 @@ def test_tenant_role_closed_and_unsupported_case_guards(api):
     who["sub"] = "viewer"
     with factory() as db:
         db.add(Membership(org_id=UUID(org), subject="viewer", role="viewer", is_active=True));db.commit()
-    assert client.get(root + "/matrix?filing_context=inside_canada").status_code == 200
-    assert client.post(root + "/request-missing", json={"filing_context": "inside_canada"}).status_code == 403
+    assert client.get(root + "/matrix?filing_context=inside_canada").status_code == 404
+    assert client.post(root + "/request-missing", json={"filing_context": "inside_canada"}).status_code == 404
     who["sub"] = "test-user-a"
     client.patch(f"/api/v1/orgs/{org}/cases/{case}/status", json={"status": "closed", "reason": "Synthetic case complete"})
     assert client.post(root + "/request-missing", json={"filing_context": "inside_canada"}).status_code == 409

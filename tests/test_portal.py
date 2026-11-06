@@ -134,6 +134,6 @@ def test_cross_firm_and_role_restrictions(api):
     with factory() as db:
         db.add(Membership(org_id=UUID(org2),subject='second-viewer',role='viewer',is_active=True))
         db.commit()
-    assert client.post(f'/api/v1/orgs/{org2}/cases/{case2}/portal/invitations').status_code == 403
+    assert client.post(f'/api/v1/orgs/{org2}/cases/{case2}/portal/invitations').status_code == 404
     assert client.post(f'/api/v1/orgs/{org2}/cases/{case2}/portal/requests',
-                       json={'title':'No privilege','document_type':'passport'}).status_code == 403
+                       json={'title':'No privilege','document_type':'passport'}).status_code == 404
