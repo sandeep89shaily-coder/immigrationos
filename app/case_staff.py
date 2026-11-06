@@ -72,7 +72,7 @@ def grant_assistant(org_id: UUID, case_id: UUID, payload: GrantInput,
         raise HTTPException(422, "Assignee must be an active assistant in this firm")
     existing = db.scalar(select(CaseAccessGrant.id).where(
         CaseAccessGrant.org_id == org_id, CaseAccessGrant.case_id == case_id,
-        CaseAccessGrant.subject == target.subject,
+        CaseAccessGrant.subject == payload.subject,
         CaseAccessGrant.revoked_at.is_(None),
     ))
     if existing is not None:
