@@ -31,7 +31,7 @@ def main():
         f"- Date: {snapshot['observed_on']}\n"
         f"- Official index entries discovered: {snapshot['catalog_entries']}\n"
         f"- Index response bytes: {bytes_read}\n"
-        f"- Snapshot SHA-256: \`{snapshot['source_table_sha256']}\`\n"
+        f"- Snapshot SHA-256: `{snapshot['source_table_sha256']}`\n"
         "- Status: **UNREVIEWED**. The index can include checklists, guides and inactive pathways.\n"
         "- Field mappings approved: **0** by this observation.\n"
         "- Official PDF generation validated: **0** by this observation.\n"
