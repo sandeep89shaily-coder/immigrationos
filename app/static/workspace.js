@@ -1,7 +1,7 @@
 /* ImmigrationOS consultant workspace. No frontend build chain, no stored access token.
    For fictitious development data ONLY. Auth: OIDC authorization code with PKCE. */
 'use strict';
-const S={config:null,token:null,refresh:null,expires:0,orgs:[],org:null,view:'dashboard',caseId:null,prospectId:null,tab:'overview',filingContext:null,data:{}};
+const S={config:null,token:null,refresh:null,expires:0,orgs:[],org:null,view:'dashboard',caseId:null,prospectId:null,engagementClientId:null,tab:'overview',filingContext:null,data:{}};
 const $=id=>document.getElementById(id);
 const h=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const d=x=>x?new Date(x).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}):'—';
@@ -53,9 +53,9 @@ async function init(){try{
  $('loginBtn').addEventListener('click',login);
  $('signoutBtn').addEventListener('click',logout);
  $('refreshBtn').addEventListener('click',()=>render().catch(fail));
- $('firmSelect').addEventListener('change',async e=>{S.org=e.target.value||null;sessionStorage.setItem('ios_org',S.org||'');S.caseId=null;S.prospectId=null;await render()});
+ $('firmSelect').addEventListener('change',async e=>{S.org=e.target.value||null;sessionStorage.setItem('ios_org',S.org||'');S.caseId=null;S.prospectId=null;S.engagementClientId=null;await render()});
  $('closeModal').addEventListener('click',closeModal);$('modalBackdrop').addEventListener('click',e=>{if(e.target.id==='modalBackdrop')closeModal()});
- document.querySelectorAll('.nav-item').forEach(x=>x.addEventListener('click',()=>{S.view=x.dataset.view;S.caseId=null;S.prospectId=null;render().catch(fail)}));
+ document.querySelectorAll('.nav-item').forEach(x=>x.addEventListener('click',()=>{S.view=x.dataset.view;S.caseId=null;S.prospectId=null;S.engagementClientId=null;render().catch(fail)}));
  document.addEventListener('click',eventHandler);
  if(!await oauthCallback()){showLogin();return}
  showShell();await firms();await render();
@@ -70,6 +70,7 @@ function table(headers,rows){if(!rows.length)return empty('Nothing here yet','Cr
 async function render(){nav();if(!S.org){$('mainContent').innerHTML=`${page('Set up your first firm','Create a fictional development firm to start working with sample matters.',btn('+ Create practice','newOrg','primary'))}<div class="callout">This is not an approved production product. Use fictional names and test documents only.</div>`;return}
  $('mainContent').innerHTML='<div class="loading">Loading workspace…</div>';
  try{if(S.caseId)return await renderCase();
+ if(S.engagementClientId)return await renderEngagement();
  if(S.view==='dashboard')await renderDashboard();
  if(S.view==='crm')await renderCRM();
  if(S.view==='cases')await renderCases();
@@ -89,7 +90,7 @@ async function renderDashboard(){const [data,cases,tasks,issues]=await Promise.a
  ${panel('Needs attention',`<div class="panel-body">${issues.length?issues.slice(0,4).map(i=>issueItem(i)).join(''):empty('No open evidence issues','New evidence contradictions will appear here.')}${tasks.slice(0,3).map(t=>taskItem(t)).join('')}</div>`,btn('Tasks →','goTasks','smallbtn'))}</div>`;
 }
 async function renderCases(){const cases=await api(q()+'/cases?limit=100');$('mainContent').innerHTML=`${page('Matters',`${cases.length} matters in this practice.`,btn('+ New matter','newCase','primary'))}${panel('All matters',table(['Matter','Application','Status','Created',''],caseRows([...cases].reverse())))}`}
-async function renderClients(){const clients=await api(q()+'/clients?limit=100');const rows=clients.map(c=>`<tr><td><strong>${h(c.first_name)} ${h(c.last_name)}</strong></td><td>${h(c.email||'—')}</td><td>${h(c.phone||'—')}</td><td>${d(c.created_at)}</td></tr>`);$('mainContent').innerHTML=`${page('Clients',`${clients.length} records`,btn('+ Add client','newClient','primary'))}${panel('Client directory',table(['Client','Email','Phone','Added'],rows))}`}
+async function renderClients(){const clients=await api(q()+'/clients?limit=100');const rows=clients.map(c=>`<tr class=clickable data-engagement-client="${h(c.id)}"><td><strong>${h(c.first_name)} ${h(c.last_name)}</strong></td><td>${h(c.email||'—')}</td><td>${h(c.phone||'—')}</td><td>${d(c.created_at)}</td></tr>`);$('mainContent').innerHTML=`${page('Clients',`${clients.length} records`,btn('+ Add client','newClient','primary'))}${panel('Client directory',table(['Client','Email','Phone','Added'],rows))}`}
 function issueItem(i){return `<div class="item-row"><div class="bullet">!</div><div><div class="item-title">${h(i.field_path.replaceAll('_',' '))} — ${h(i.issue_type.replaceAll('_',' '))}</div><div class="meta">${h(i.description)}</div></div><div class="push">${chip(i.status)}<button class="btn smallbtn" data-case="${h(i.case_id)}">View</button></div></div>`}
 function taskItem(t){return `<div class="item-row"><div class="bullet">☑</div><div><div class="item-title">${h(t.title)}</div><div class="meta">Due ${d(t.due_at)} · ${h(t.case_id.slice(0,8))}</div></div><div class="push"><button class="btn smallbtn" data-case="${h(t.case_id)}">Open</button></div></div>`}
 async function renderReviews(){const issues=await api(q()+'/issues?status=all');$('mainContent').innerHTML=`${page('Evidence review queue','Material discrepancies require a documented human decision.')}${panel('Case issues',`<div class="panel-body">${issues.length?issues.map(issueItem).join(''):empty('No issues recorded','Create conflicting facts in a case to see the detection engine at work.')}</div>`)}`}
@@ -227,8 +228,9 @@ function resolveIssue(id){modal(`<h2>Resolve evidence issue</h2><p>Record a prof
 function changeStatus(){const caseObj=S.data.cases.find(x=>x.id===S.caseId);const map={draft:['intake','closed'],intake:['review','on_hold','closed'],review:['intake','on_hold','closed'],on_hold:['intake','review','closed'],closed:[]};const options=map[caseObj.status]||[];
  modal(`<h2>Update case status</h2><p>Status changes are recorded in the audit trail. This does not submit anything to IRCC.</p><form>${selectField('status','Next status',options.map(v=>[v,v.replaceAll('_',' ')]))}${fld('reason','Reason (required)','text','required minlength="10" maxlength="250"')}${actions('Update status')}</form>`,async f=>{await api(q()+`/cases/${S.caseId}/status`,{method:'PATCH',body:values(f)})})}
 async function downloadDoc(id){const doc=S.data.docs.find(x=>x.id===id);const res=await api(q()+`/cases/${S.caseId}/documents/${id}/download`,{raw:true});const blob=await res.blob();const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=doc?.filename||'document';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000)}
-async function eventHandler(e){const tab=e.target.closest('[data-tab]');if(tab){S.tab=tab.dataset.tab;return render().catch(fail)}const prow=e.target.closest('[data-prospect]');if(prow){S.prospectId=prow.dataset.prospect;S.caseId=null;S.view='crm';return render().catch(fail)}const row=e.target.closest('[data-case]');if(row){S.caseId=row.dataset.case;S.view='cases';S.tab='overview';S.filingContext=null;S.prospectId=null;return render().catch(fail)}const act=e.target.closest('[data-action]');if(!act)return;const action=act.dataset.action;
+async function eventHandler(e){const tab=e.target.closest('[data-tab]');if(tab){S.tab=tab.dataset.tab;return render().catch(fail)}const cRow=e.target.closest('[data-engagement-client]');if(cRow){S.engagementClientId=cRow.dataset.engagementClient;S.caseId=null;S.prospectId=null;S.view='clients';return render().catch(fail)}const prow=e.target.closest('[data-prospect]');if(prow){S.prospectId=prow.dataset.prospect;S.caseId=null;S.view='crm';return render().catch(fail)}const row=e.target.closest('[data-case]');if(row){S.caseId=row.dataset.case;S.view='cases';S.tab='overview';S.filingContext=null;S.prospectId=null;return render().catch(fail)}const act=e.target.closest('[data-action]');if(!act)return;const action=act.dataset.action;
  try{
+ if(action.startsWith('eg:'))return await egAction(action);
  if(action.startsWith('crm:'))return await crmAction(action);
  if(action.startsWith('repOperation:')){S.repOperation=action.split(':')[1];return await render()}
 if(action.startsWith('repChannel:')){S.repChannel=action.split(':')[1];return await render()}
