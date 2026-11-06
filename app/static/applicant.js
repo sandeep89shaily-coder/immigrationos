@@ -36,7 +36,7 @@ async function renderApplicantCase(clientId){
    const summary=Object.entries(entry.details).filter(([key])=>!['start_date','end_date'].includes(key)).map(([key,val])=>h(key.replaceAll('_',' '))+': '+h(val)).join(' · ');
    const review=evidence.records.find(row=>row.record_id===entry.id);
    const discrepancies=(review?.fields||[]).filter(field=>field.status==='conflict_requires_review').length;
-   html+='<div class="item-row"><div style="flex:1"><div class="item-title">'+h(entry.details.start_date)+' – '+h(entry.details.end_date||'present / not recorded')+'</div><div class="meta">'+summary+'</div><div class="meta">'+(discrepancies?discrepancies+' evidence discrepancy/discrepancies':'Not independently evidence-verified')+'</div></div>'+btn('Edit','applicant:history-edit:'+entry.id,'smallbtn')+'</div>';
+   html+='<div class="item-row"><div style="flex:1"><div class="item-title">'+h(entry.details.start_date)+' – '+h(entry.details.end_date||'present / not recorded')+'</div><div class="meta">'+summary+'</div><div class="meta">'+(discrepancies?discrepancies+' evidence discrepancy/discrepancies':'Not independently evidence-verified')+'</div></div><div class="push">'+btn('Link evidence','applicant:history-evidence:'+entry.id,'smallbtn')+' '+btn('Edit','applicant:history-edit:'+entry.id,'smallbtn')+'</div></div>';
   }
   html+=btn('Add '+kind,'applicant:history-add:'+kind,'smallbtn');
  }
@@ -102,6 +102,11 @@ async function applicantAction(action){
    return applicantFamily(person);
  }
  if(action.startsWith('applicant:history-add:'))return applicantHistoryEditor(action.split(':')[2],null);
+ if(action.startsWith('applicant:history-evidence:')){
+  const existing=S.applicantHistories?.find(row=>row.id===action.split(':')[2]);
+  if(!existing)return toast('Reload this profile');
+  return applicantHistoryEvidence(existing);
+ }
  if(action.startsWith('applicant:history-edit:')){
   const existing=S.applicantHistories?.find(row=>row.id===action.split(':')[2]);
   if(!existing)return toast('Reload this profile');
@@ -152,5 +157,28 @@ function applicantHistoryEditor(kind,existing){
    await api(q()+'/clients/'+encodeURIComponent(S.applicantClientId)+'/histories/'+kind+
      (existing?'/'+encodeURIComponent(existing.id):''),{
        method:existing?'PUT':'POST',body:payload});
+ });
+}
+
+function applicantHistoryEvidence(record){
+ const pdfs=(S.data.docs||[]);
+ if(!pdfs.length)return toast('Upload a supporting document in the Documents tab first.');
+ const fields=Object.entries(record.details).filter(([key,value])=>typeof value==='string'&&value.length>0);
+ const html='<h2>Link documentary evidence</h2>'+
+   '<p>Create a pending case fact based on an applicant history value and a document already in this case. A separate consultant review is required.</p><form>'+
+   selectField('field_key','History field',fields.map(([key,value])=>[key,key.replaceAll('_',' ')+': '+value]))+
+   selectField('document_id','Supporting case document',pdfs.map(doc=>[doc.id,doc.filename]))+
+   fld('source_page','Source page (optional)','number','min="1"')+
+   fld('source_excerpt','Source excerpt (optional)','text','minlength="10" maxlength="500"')+
+   actions('Create pending fact')+'</form>';
+ modal(html,async form=>{
+   const valuesFromForm=values(form);
+   const body={document_id:valuesFromForm.document_id};
+   if(valuesFromForm.source_page)body.source_page=Number(valuesFromForm.source_page);
+   if(valuesFromForm.source_excerpt)body.source_excerpt=valuesFromForm.source_excerpt;
+   await api(q()+'/cases/'+encodeURIComponent(S.caseId)+'/histories/'+
+      encodeURIComponent(record.id)+'/fields/'+encodeURIComponent(valuesFromForm.field_key)+
+      '/evidence',{method:'POST',body});
+   toast('Pending fact created: review it in Evidence.');
  });
 }
