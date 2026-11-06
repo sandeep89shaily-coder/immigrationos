@@ -4,6 +4,24 @@
 
 A real FastAPI/PostgreSQL case-and-evidence workspace with OIDC sign-in, tenant-isolated records, a consultant dashboard, encrypted local development uploads, traceable fact suggestions, discrepancy detection, human review, internal form worksheets and task tracking. The code evolves the previously delivered v0.2 foundation; it does **not** reuse the v0.1 single-file Flask demo.
 
+## RCIC service engagement workflow (synthetic development)
+
+The **Clients** directory now opens a **Service Engagement** workflow for each
+fictional client. Staff review identity, prior representation and conflicts;
+complete all 26 statutory Code s.24 content categories in a revision-pinned
+unsigned draft; arrange signature and client-copy delivery externally; upload
+a signed PDF; require isolated malware scanning and human review; and open
+a supervised **draft** immigration case linked to the agreement and client.
+
+A new conflicting/uncleared screen or unsigned agreement revision prevents
+*new engagement-gated matters* from being opened with stale proof.
+This is not legally certified agreement language; it does not independently
+verify CICC licences, signatures or client delivery. **Legacy demo case APIs
+still bypass this new gate** and must not be considered authorized matters.
+No production client data or real immigration service should use this build.
+
+See [RCIC service agreement, conflicts and supervised matter engineering notes](docs/RCIC_SERVICE_ENGAGEMENT_V1.md).
+
 ## CRM milestone: prospect → signed consultation evidence → client
 
 The development consultant UI at \`http://localhost:8000/app\` now includes
