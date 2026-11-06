@@ -64,6 +64,13 @@ def _invite_data(entry: StaffInvitation):
     }
 
 
+@router.get("/me")
+def current_practice_staff(org_id: UUID, access: OrgAccess = Depends(get_org_access)):
+    """Authoritative subject for role-aware UI controls; no client information."""
+    return {"subject": access.principal.sub, "role": access.role.value,
+            "org_id": str(org_id)}
+
+
 @router.get("/members")
 def list_members(org_id: UUID, db: Session = Depends(get_db),
                  access: OrgAccess = Depends(get_org_access)):
