@@ -425,6 +425,29 @@ async def upload_signed_copy(org_id: UUID, prospect_id: UUID, consultation_id: U
         raise
 
 
+@router.get("/prospects/{prospect_id}/consultations/{consultation_id}/agreements/{agreement_id}/signed-copy")
+def download_signed_copy(org_id: UUID, prospect_id: UUID, consultation_id: UUID, agreement_id: UUID,
+                         db: Session = Depends(get_db), access: OrgAccess = Depends(get_org_access)):
+    """Only authorized staff can inspect a scan-cleared copy before review."""
+    allow(access, REVIEW)
+    _agreement(db, org_id, prospect_id, consultation_id, agreement_id)
+    proof = _proof(db, org_id, prospect_id, agreement_id)
+    if proof is None:
+        raise HTTPException(404, "Signed copy not found")
+    if proof.scan_status != "cleared":
+        raise HTTPException(423, "Signed copy is quarantined or rejected")
+    data = load_blob(proof.storage_key)
+    if hashlib.sha256(data).hexdigest() != proof.sha256:
+        raise HTTPException(409, "Stored document checksum mismatch")
+    _event(db, access, "crm.signed_copy_downloaded", "consultation_signed_copy", proof.id)
+    db.commit()
+    return Response(data, media_type="application/pdf", headers={
+        "Content-Disposition": 'attachment; filename="consultation-signed.pdf"',
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
 @router.post("/prospects/{prospect_id}/consultations/{consultation_id}/agreements/{agreement_id}/scan")
 def rescan_signed_copy(org_id: UUID, prospect_id: UUID, consultation_id: UUID, agreement_id: UUID,
                        db: Session = Depends(get_db), access: OrgAccess = Depends(get_org_access)):
