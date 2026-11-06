@@ -51,6 +51,7 @@ class Case(Base):
     __tablename__ = "cases"
     __table_args__ = (
         UniqueConstraint("org_id", "id", name="uq_case_org_id"),
+        UniqueConstraint("org_id", "client_id", "id", name="uq_case_org_client_id"),
         ForeignKeyConstraint(["org_id", "client_id"], ["clients.org_id", "clients.id"], name="fk_case_client_same_tenant"),
         Index("ix_cases_org_status", "org_id", "status"),
         CheckConstraint("status IN ('draft','intake','review','on_hold','closed')", name="ck_case_status"),
