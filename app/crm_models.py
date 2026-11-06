@@ -135,3 +135,29 @@ class ConsultationSignedCopy(Base):
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by_sub: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class ProspectFollowUp(Base):
+    """Firm-internal next action. No external message delivery is implied."""
+    __tablename__ = "crm_followups"
+    __table_args__ = (
+        ForeignKeyConstraint(["org_id", "prospect_id"], ["crm_prospects.org_id", "crm_prospects.id"],
+                             name="fk_crm_followup_prospect"),
+        CheckConstraint("status IN ('open','completed','cancelled')", name="ck_crm_followup_status"),
+        CheckConstraint("priority IN ('normal','urgent')", name="ck_crm_followup_priority"),
+        Index("ix_crm_followups_due", "org_id", "status", "due_at"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    org_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+    prospect_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    title: Mapped[str] = mapped_column(String(180), nullable=False)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    priority: Mapped[str] = mapped_column(String(16), nullable=False, default="normal")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="open")
+    assigned_to_sub: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_by_sub: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    completed_by_sub: Mapped[str | None] = mapped_column(String(255))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_by_sub: Mapped[str | None] = mapped_column(String(255))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
