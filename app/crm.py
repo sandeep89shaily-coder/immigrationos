@@ -6,11 +6,12 @@ A review is a recorded human attestation, not signature authentication.
 """
 from datetime import datetime, timedelta, timezone
 import hashlib
+import html
 import json
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import Response, HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -369,6 +370,58 @@ def prepare_agreement(org_id: UUID, prospect_id: UUID, consultation_id: UUID, pa
             "terms_sha256": agreement.terms_sha256, "terms": snapshot,
             "status": "draft_not_signed", "s23_check_required": True,
             "delivery_and_e_signature_not_implemented": True}
+
+
+@router.get("/prospects/{prospect_id}/consultations/{consultation_id}/agreements/{agreement_id}/draft")
+def download_agreement_draft(org_id: UUID, prospect_id: UUID, consultation_id: UUID, agreement_id: UUID,
+                            db: Session = Depends(get_db), access: OrgAccess = Depends(get_org_access)):
+    """Printable, escaped draft terms. NOT an e-signed regulated agreement."""
+    allow(access, READ_ROLES)
+    agreement = _agreement(db, org_id, prospect_id, consultation_id, agreement_id)
+    terms = agreement.terms
+    labels = (
+        ("Consultant name", "licensee_name"),
+        ("Registration number", "licensee_registration_number"),
+        ("Consultant address", "licensee_address"),
+        ("Consultant telephone", "licensee_phone"),
+        ("Consultant email", "licensee_email"),
+        ("Prospective client", "client_name"),
+        ("Client address", "client_address"),
+        ("Client telephone", "client_phone"),
+        ("Client email", "client_email"),
+        ("Consultation fee, CAD cents", "fee_cents_cad"),
+        ("Pro bono consultation", "pro_bono"),
+        ("Role of the College", "regulator_description"),
+        ("Purpose and scope", "purpose_scope"),
+    )
+    rows = "".join("<tr><th>" + html.escape(label) + "</th><td>" +
+                   html.escape(str(terms.get(key) if terms.get(key) is not None else "Not provided")) +
+                   "</td></tr>" for label, key in labels)
+    body = (
+        "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+        "<title>Unapproved Consultation Agreement Draft</title><style>"
+        "body{font:15px/1.5 Arial,sans-serif;max-width:850px;margin:40px auto;padding:24px}"
+        "table{width:100%;border-collapse:collapse}td,th{border:1px solid #aaa;padding:10px;"
+        "text-align:left;vertical-align:top}th{width:35%;background:#eee}"
+        ".warning{border:2px solid #a00;padding:12px;font-weight:bold;color:#800}"
+        "footer{margin-top:30px;border-top:1px solid #999;padding-top:15px}"
+        "</style></head><body><h1>Consultation agreement — draft for professional review</h1>"
+        "<p class='warning'>NOT SIGNED · NOT A LEGAL TEMPLATE APPROVAL · FICTIONAL DATA ONLY</p>"
+        "<p>Version " + str(agreement.version) + " · Terms SHA-256: " +
+        html.escape(agreement.terms_sha256) + "</p><table>" + rows + "</table>"
+        "<footer><p>Consultant signature: ______________________ Date: __________</p>"
+        "<p>Prospective client signature: ______________________ Date: __________</p>"
+        "<p>A signed copy must be retained and provided to the client, with "
+        "independent human review before the consultation can be marked complete.</p>"
+        "<p>Code of Professional Conduct, s.23. Verify applicability, latest "
+        "regulatory requirements and professional credentials independently.</p>"
+        "</footer></body></html>"
+    )
+    return HTMLResponse(body, headers={
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+    })
 
 
 @router.post("/prospects/{prospect_id}/consultations/{consultation_id}/agreements/{agreement_id}/signed-copy",
