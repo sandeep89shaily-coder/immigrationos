@@ -12,9 +12,9 @@ from sqlalchemy import text
 
 from app.auth import Principal, get_principal
 from app.db import engine
+from app.main import app  # import application before engagement to avoid cycle
 from app.engagement import CLAUSES
 from app import engagement
-from app.main import app
 
 identity = {"sub": ""}
 
