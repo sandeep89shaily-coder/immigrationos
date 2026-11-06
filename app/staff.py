@@ -53,11 +53,9 @@ class StaffRoleChange(BaseModel):
 
 def _invite_data(entry: StaffInvitation):
     ts = now()
-    state = ("accepted" if entry.accepted_at else "revoked" if entry.revoked_at
-             else "expired" if entry.expires_at.replace(tzinfo=timezone.utc)
-             < ts if entry.expires_at.tzinfo is None else
-             "accepted" if entry.accepted_at else "revoked" if entry.revoked_at
-             else "expired" if entry.expires_at < ts else "pending")
+    state = ("accepted" if entry.accepted_at else
+             "revoked" if entry.revoked_at else
+             "expired" if _utc(entry.expires_at) <= ts else "pending")
     return {
         "id": str(entry.id), "email": entry.invited_email, "role": entry.role,
         "status": state, "created_at": entry.created_at, "expires_at": entry.expires_at,
