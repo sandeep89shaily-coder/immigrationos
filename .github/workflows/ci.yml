@@ -68,3 +68,5 @@ jobs:
       - run: DATABASE_URL="$RLS_APP_DATABASE_URL" python scripts/postgres_api_smoke.py
       - name: Exercise email-bound portal grants with PostgreSQL RLS
         run: DATABASE_URL="$RLS_APP_DATABASE_URL" python scripts/postgres_portal_smoke.py
+      - name: Exercise IRCC preflight acknowledgements under PostgreSQL RLS
+        run: DATABASE_URL="$RLS_APP_DATABASE_URL" python scripts/postgres_form_preflight_smoke.py
