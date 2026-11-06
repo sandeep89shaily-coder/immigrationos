@@ -1,36 +1,92 @@
-"""Real PostgreSQL tenant-RLS negative tests (run after local migrations)."""
+"""Adversarial, transaction-rollback tests against a real PostgreSQL app role.
+
+Run after Alembic migrations with RLS_APP_DATABASE_URL set to the LIMITED
+immigrationos_app role. This script deliberately uses synthetic records only.
+"""
 import os
 from uuid import uuid4
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
 
-# Must use LIMITED APPLICATION ROLE, not the migration role or PostgreSQL superuser.
 url = os.environ.get("RLS_APP_DATABASE_URL")
-if not url:
-    raise SystemExit("Set RLS_APP_DATABASE_URL to the immigrationos_app connection URL")
+if not url or not url.startswith(("postgresql+psycopg://", "postgresql://")):
+    raise SystemExit("Set RLS_APP_DATABASE_URL to a PostgreSQL immigrationos_app URL")
+
 engine = create_engine(url)
-t1, t2 = uuid4(), uuid4()
+
+def context(conn, principal, tenant):
+    conn.execute(text("SELECT set_config('app.principal_sub', :p, true)"), {"p": principal})
+    conn.execute(text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(tenant)})
+
+def count(conn, table):
+    return conn.execute(text(f"SELECT count(*) FROM {table}")).scalar_one()
+
 with engine.connect() as conn:
-    # Without any context, tenant-scoped tables must expose no rows.
-    result = conn.execute(text("SELECT count(*) FROM clients")).scalar_one()
-    assert result == 0, "RLS FAILED: clients exposed without tenant context"
-    # With an unrelated tenant context, rows are filtered by tenant_id.
-    conn.execute(text("SELECT set_config('app.tenant_id', :tenant, true)"), {"tenant": str(t1)})
-    result = conn.execute(text("SELECT count(*) FROM clients WHERE org_id = :id"), {"id": t2}).scalar_one()
-    assert result == 0, "RLS FAILED: cross-tenant client rows exposed"
-    # The evidence domain must enforce FORCE ROW LEVEL SECURITY on every table.
-    tenant_tables = ['clients','cases','audit_events','case_documents','case_facts',
-                     'case_issues','case_tasks','fact_suggestions']
-    policies = conn.execute(text("""SELECT relname, relrowsecurity, relforcerowsecurity
-       FROM pg_class WHERE relname = ANY(:tables)"""), {'tables': tenant_tables}).all()
-    assert len(policies) == len(tenant_tables), 'RLS FAILED: missing evidence tables'
-    assert all(enabled and force for _, enabled, force in policies), 'RLS FAILED: RLS not forced'
-    for table in tenant_tables:
-        assert conn.execute(text(f"SELECT count(*) FROM {table} WHERE org_id = :tid"),
-                            {'tid': t2}).scalar_one() == 0, f'RLS FAILED: cross tenant rows in {table}'
-    # No UPDATE or DELETE privileges on immutable audit history.
-    privileges = conn.execute(text("""SELECT has_table_privilege(current_user, 'audit_events', 'UPDATE'),
-        has_table_privilege(current_user, 'audit_events', 'DELETE')""")).one()
-    assert privileges == (False, False), "RLS FAILED: audit history writable"
-    conn.rollback()
-print("PASS: database role and baseline RLS checks")
+    transaction = conn.begin()
+    try:
+        role = conn.execute(text("SELECT current_user, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user")).one()
+        assert role[0] == "immigrationos_app", "RLS test must use the limited application role"
+        assert not role[1] and not role[2], "Application role bypasses RLS"
+        context(conn, "", "")
+        assert count(conn, "clients") == 0, "RLS exposed clients without identity context"
+
+        tenant_a, tenant_b = uuid4(), uuid4()
+        client_a, client_b = uuid4(), uuid4()
+        case_a, case_b = uuid4(), uuid4()
+        principal_a, principal_b = f"rls-a-{uuid4()}", f"rls-b-{uuid4()}"
+        now = "2026-01-01T00:00:00Z"
+
+        for org, client, case, principal, label in [
+            (tenant_a, client_a, case_a, principal_a, "A"),
+            (tenant_b, client_b, case_b, principal_b, "B"),
+        ]:
+            context(conn, principal, org)
+            conn.execute(text("""INSERT INTO organizations (id, slug, name, created_by_sub, created_at)
+                VALUES (:id, :slug, :name, :principal, :now)"""),
+                {"id": org, "slug": f"rls-{str(org)}", "name": f"Synthetic {label}", "principal": principal, "now": now})
+            conn.execute(text("""INSERT INTO memberships (id, org_id, subject, role, is_active, created_at)
+                VALUES (:id, :org, :principal, 'owner', true, :now)"""),
+                {"id": uuid4(), "org": org, "principal": principal, "now": now})
+            conn.execute(text("""INSERT INTO clients (id, org_id, first_name, last_name, created_at, updated_at)
+                VALUES (:id, :org, :name, 'Test', :now, :now)"""),
+                {"id": client, "org": org, "name": f"Synthetic {label}", "now": now})
+            conn.execute(text("""INSERT INTO cases (id, org_id, client_id, application_type, title, status, created_at, updated_at)
+                VALUES (:id, :org, :client, 'study_permit', 'Synthetic application', 'draft', :now, :now)"""),
+                {"id": case, "org": org, "client": client, "now": now})
+
+        context(conn, principal_a, tenant_a)
+        assert count(conn, "clients") == 1 and count(conn, "cases") == 1
+        assert conn.execute(text("SELECT id FROM clients")).scalar_one() == client_a
+        context(conn, principal_b, tenant_b)
+        assert count(conn, "clients") == 1 and count(conn, "cases") == 1
+        assert conn.execute(text("SELECT id FROM clients")).scalar_one() == client_b
+
+        # Switching tenant_id alone must not grant access if the principal is not a member.
+        context(conn, principal_a, tenant_b)
+        assert count(conn, "clients") == 0 and count(conn, "cases") == 0, \
+            "RLS FAILED: changing tenant context exposed another firm's data"
+        with conn.begin_nested() as savepoint:
+            try:
+                conn.execute(text("""INSERT INTO clients (id, org_id, first_name, last_name, created_at, updated_at)
+                    VALUES (:id, :org, 'Injected', 'Client', :now, :now)"""),
+                    {"id": uuid4(), "org": tenant_b, "now": now})
+            except SQLAlchemyError:
+                savepoint.rollback()
+            else:
+                savepoint.rollback()
+                raise AssertionError("RLS FAILED: non-member could insert client into another firm")
+
+        tenant_tables = ["clients", "cases", "audit_events", "case_documents", "case_facts",
+                         "case_issues", "case_tasks", "fact_suggestions"]
+        policies = conn.execute(text("""SELECT relname, relrowsecurity, relforcerowsecurity
+            FROM pg_class WHERE relname = ANY(:tables)"""), {"tables": tenant_tables}).all()
+        assert len(policies) == len(tenant_tables), "RLS FAILED: missing tables"
+        assert all(enabled and force for _, enabled, force in policies), "RLS FAILED: FORCE RLS missing"
+        privileges = conn.execute(text("""SELECT has_table_privilege(current_user, 'audit_events', 'UPDATE'),
+            has_table_privilege(current_user, 'audit_events', 'DELETE')""")).one()
+        assert privileges == (False, False), "RLS FAILED: audit history is mutable"
+    finally:
+        transaction.rollback()
+engine.dispose()
+print("PASS: PostgreSQL limited-role, active-membership RLS and write-isolation checks")
