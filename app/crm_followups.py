@@ -41,13 +41,14 @@ class CreateFollowUp(BaseModel):
 
 
 def item(row: ProspectFollowUp) -> dict:
+    # SQLite test timestamps may lose tzinfo; saved application dates are UTC.
+    due_utc = (row.due_at.replace(tzinfo=timezone.utc) if row.due_at.tzinfo is None
+               else row.due_at.astimezone(timezone.utc))
     return {
         "id": str(row.id), "prospect_id": str(row.prospect_id),
         "title": row.title, "status": row.status, "priority": row.priority,
         "due_at": row.due_at,
-        "overdue": (row.status == "open" and row.due_at.replace(tzinfo=timezone.utc)
-                    < now() if row.due_at.tzinfo is None else
-                    row.status == "open" and row.due_at.astimezone(timezone.utc) < now()),
+        "overdue": row.status == "open" and due_utc < now(),
         "assigned_to_sub": row.assigned_to_sub, "created_at": row.created_at,
         "completed_at": row.completed_at, "cancelled_at": row.cancelled_at,
         "delivery_mode": "internal_queue_only", "message_sent": False,
