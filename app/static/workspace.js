@@ -104,7 +104,7 @@ async function renderCase(){const [cases,clients,tasks,issues,facts,docs,readine
  const c=cases.find(c=>c.id===S.caseId);if(!c){S.caseId=null;return render()};const client=clients.find(x=>x.id===c.client_id);
  const worksheet=await api(q()+`/cases/${S.caseId}/worksheets/${c.application_type==='work_permit'?'work_permit_demo':'study_permit_demo'}`);
  S.data={cases,clients,tasks,issues,facts,docs,readiness,suggestions,worksheet};
- const tabs=['overview','evidence','planning','intake','documents','suggestions','worksheet','preflight','tasks','issues','portal'];
+ const tabs=['overview','evidence','planning','intake','documents','suggestions','worksheet','preflight','representative','tasks','issues','portal'];
  let content='';
  if(S.tab==='overview') content=`${gateWidget(readiness)}<div class="two-col">${panel('Matter details',`<div class="panel-body">${keyValue('Application type',c.application_type.replaceAll('_',' '))}${keyValue('Client',client?client.first_name+' '+client.last_name:'Unknown')}${keyValue('Opened',d(c.created_at))}${keyValue('Status',c.status)}</div>`)}${panel('Evidence summary',`<div class="panel-body">${keyValue('Verified facts',String(readiness.verified_facts))}${keyValue('Pending verification',String(readiness.pending_facts))}${keyValue('Open exceptions',String(readiness.open_issues))}${keyValue('Documents uploaded',String(readiness.documents))}</div>`)}</div>`;
  if(S.tab==='evidence')content=panel('Case facts and human verification',`<div class="panel-body">${facts.length?facts.map(factItem).join(''):empty('No evidence facts','Add a manually documented fact to begin the evidence record.')}</div>`,btn('+ Add fact','newFact','primary smallbtn'));
@@ -180,6 +180,20 @@ if(S.tab==='documents')content=panel('Encrypted development documents',`<div cla
    content=panel('Evidence-bound form preflight','<div class="panel-body">'+html+'</div>',actionButton);
   }
  }
+if(S.tab==='representative'){
+ S.repOperation=S.repOperation||'appoint'; S.repChannel=S.repChannel||'portal_or_secure_account';
+ const source=q()+'/ircc/forms/IMM5476/workflow?operation='+encodeURIComponent(S.repOperation)+'&submission_channel='+encodeURIComponent(S.repChannel);
+ const profile=await api(source);
+ let body='<div class=warning-text>IMM 5476 (11-2025) — preparation and PDF technical inspection only. No official form is generated, validated or submitted.</div>';
+ body+='<p>'+[['appoint','Appoint'],['update_contact','Update contact'],['cancel','Cancel'],['replace','Replace'],['withdraw','Withdraw']].map(pair=>btn(pair[1],'repOperation:'+pair[0],'smallbtn')).join(' ')+'</p>';
+ body+='<p>'+btn('Portal / secure account','repChannel:portal_or_secure_account','smallbtn')+' '+btn('Outside a portal','repChannel:outside_portal','smallbtn')+'</p>';
+ body+='<div class=callout><strong>'+h(profile.operation_title)+'</strong> · Required sections: '+profile.sections.map(x=>h(x.code)).join(', ')+'</div>';
+ body+='<p><a href="'+h(profile.source_url)+'" target="_blank" rel="noopener noreferrer">Official IRCC instructions ↗</a> · <a href="'+h(profile.official_pdf_url)+'" target="_blank" rel="noopener noreferrer">Current PDF ↗</a></p>';
+ body+='<ul>'+profile.notes.map(x=>'<li>'+h(x)+'</li>').join('')+'</ul>';
+ body+='<div class=callout>Inspect a blank PDF downloaded from IRCC to learn its technical structure. The application does not store this file or certify its official provenance. Never upload completed client documents.</div>';
+ if(S.templateInspection){const r=S.templateInspection;body+='<div class=callout>Last inspection: '+h(r.classification)+' · '+r.pages+' pages · '+r.field_count+' fields · SHA-256 '+h(r.file_sha256.slice(0,18))+'…</div>';body+='<p class=meta>Indicators: '+h(r.indicators.join(', ')||'none')+'</p>';body+='<p class=meta>Sample technical fields: '+h(r.field_names.slice(0,12).join(', ')||'none')+'</p>';}
+ content=panel('IMM 5476 · RCIC representative workflow','<div class=panel-body>'+body+'</div>',btn('Inspect blank PDF','inspectRepresentativePDF','primary smallbtn'));
+}
 if(S.tab==='portal'){
    const root=q()+`/cases/${S.caseId}/portal`;
    const [requests,submissions]=await Promise.all([api(root+'/requests'),api(root+'/submissions')]);
@@ -214,7 +228,12 @@ function changeStatus(){const caseObj=S.data.cases.find(x=>x.id===S.caseId);cons
 async function downloadDoc(id){const doc=S.data.docs.find(x=>x.id===id);const res=await api(q()+`/cases/${S.caseId}/documents/${id}/download`,{raw:true});const blob=await res.blob();const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=doc?.filename||'document';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000)}
 async function eventHandler(e){const tab=e.target.closest('[data-tab]');if(tab){S.tab=tab.dataset.tab;return render().catch(fail)}const row=e.target.closest('[data-case]');if(row){S.caseId=row.dataset.case;S.view='cases';S.tab='overview';S.filingContext=null;return render().catch(fail)}const act=e.target.closest('[data-action]');if(!act)return;const action=act.dataset.action;
  try{
- if(action==='acknowledgePreflight'){
+ if(action.startsWith('repOperation:')){S.repOperation=action.split(':')[1];return await render()}
+if(action.startsWith('repChannel:')){S.repChannel=action.split(':')[1];return await render()}
+if(action==='inspectRepresentativePDF'){
+ return modal('<h2>Inspect blank official form</h2><p>Development only. Select an uncompleted IMM 5476 PDF downloaded from IRCC. No client records, and no government validation.</p><form><input type="hidden" name="form_code" value="IMM5476"><label>Blank PDF template <input type="file" name="file" accept=".pdf" required></label><p><button type="submit" class="btn primary">Inspect technical fields</button></p></form>',async form=>{S.templateInspection=await api(q()+'/ircc/inspect-template',{method:'POST',body:new FormData(form)})});
+}
+if(action==='acknowledgePreflight'){
   const pre=S.preflight;
   if(!pre || pre.internal_preflight_status!=='reviewable')return toast('Resolve all internal review blockers first');
   if(!confirm('Acknowledge only this INTERNAL field subset? This is not an IRCC form, professional eligibility decision, or permission to submit.'))return;
