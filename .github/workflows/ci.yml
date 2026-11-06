@@ -19,6 +19,8 @@ jobs:
       - run: pip install -e '.[test]'
       - run: pytest -q
       - run: python -m compileall -q app alembic scripts
+      - name: Check consultant JavaScript syntax
+        run: node --check app/static/workspace.js
       - name: Validate consultant and client JavaScript syntax
         run: |
           node --check app/static/workspace.js
@@ -66,3 +68,5 @@ jobs:
       - run: DATABASE_URL="$RLS_APP_DATABASE_URL" python scripts/postgres_api_smoke.py
       - name: Exercise email-bound portal grants with PostgreSQL RLS
         run: DATABASE_URL="$RLS_APP_DATABASE_URL" python scripts/postgres_portal_smoke.py
+      - name: Exercise IRCC preflight acknowledgements under PostgreSQL RLS
+        run: DATABASE_URL="$RLS_APP_DATABASE_URL" python scripts/postgres_form_preflight_smoke.py

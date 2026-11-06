@@ -104,7 +104,7 @@ async function renderCase(){const [cases,clients,tasks,issues,facts,docs,readine
  const c=cases.find(c=>c.id===S.caseId);if(!c){S.caseId=null;return render()};const client=clients.find(x=>x.id===c.client_id);
  const worksheet=await api(q()+`/cases/${S.caseId}/worksheets/${c.application_type==='work_permit'?'work_permit_demo':'study_permit_demo'}`);
  S.data={cases,clients,tasks,issues,facts,docs,readiness,suggestions,worksheet};
- const tabs=['overview','evidence','planning','documents','suggestions','worksheet','tasks','issues','portal'];
+ const tabs=['overview','evidence','planning','documents','suggestions','worksheet','preflight','tasks','issues','portal'];
  let content='';
  if(S.tab==='overview') content=`${gateWidget(readiness)}<div class="two-col">${panel('Matter details',`<div class="panel-body">${keyValue('Application type',c.application_type.replaceAll('_',' '))}${keyValue('Client',client?client.first_name+' '+client.last_name:'Unknown')}${keyValue('Opened',d(c.created_at))}${keyValue('Status',c.status)}</div>`)}${panel('Evidence summary',`<div class="panel-body">${keyValue('Verified facts',String(readiness.verified_facts))}${keyValue('Pending verification',String(readiness.pending_facts))}${keyValue('Open exceptions',String(readiness.open_issues))}${keyValue('Documents uploaded',String(readiness.documents))}</div>`)}</div>`;
  if(S.tab==='evidence')content=panel('Case facts and human verification',`<div class="panel-body">${facts.length?facts.map(factItem).join(''):empty('No evidence facts','Add a manually documented fact to begin the evidence record.')}</div>`,btn('+ Add fact','newFact','primary smallbtn'));
@@ -128,7 +128,33 @@ async function renderCase(){const [cases,clients,tasks,issues,facts,docs,readine
 if(S.tab==='documents')content=panel('Encrypted development documents',`<div class="panel-body"><div class="warning-text">Development only — synthetic documents. Production uploads are disabled until malware scanning and privacy approval.</div>${docs.length?docs.map(docItem).join(''):empty('No documents uploaded','Upload a synthetic test document to test the secure storage workflow.')}</div>`,btn('+ Upload','newDocument','primary smallbtn'));
  if(S.tab==='suggestions')content=panel('Document extraction proposals',`<div class="panel-body"><div class="callout">Proposals come from a deterministic labelled-field parser, not an AI model. Every proposal needs human acceptance, then separate fact verification.</div>${suggestions.length?suggestions.map(s=>`<div class="item-row"><div class="bullet">◇</div><div style="flex:1"><div class="meta">${h(s.field_path)} · Page ${s.source_page} · ${h(s.extraction_method)}</div><div class="item-title">${h(s.value)}</div><div class="evidence-preview">${h(s.source_excerpt)}</div></div><div class="push">${chip(s.status)} ${s.status==='proposed'?`<div style="margin-top:8px">${btn('Accept','acceptSuggestion:'+s.id,'smallbtn')} ${btn('Dismiss','dismissSuggestion:'+s.id,'smallbtn')}</div>`:''}</div></div>`).join(''):empty('No extraction suggestions','Upload a synthetic labelled PDF/text document and select Extract on the Documents tab.')}</div>`);
  if(S.tab==='worksheet')content=panel('Internal preparation worksheet',`<div class="panel-body"><div class="warning-text">This is an INTERNAL DEMONSTRATION worksheet — not an official IRCC form and not an eligibility decision.</div>${gateWidget(readiness)}<div class="callout">${h(worksheet.title)} · ${h(worksheet.template_version)} · ${h(worksheet.status.replaceAll('_',' '))}</div>${table(['Field','Mapped verified value','Status'],worksheet.fields.map(f=>`<tr><td><strong>${h(f.label)}</strong><div class="meta">${h(f.field_path)}</div></td><td>${h(f.value||'—')}</td><td>${chip(f.status)}</td></tr>`))}</div>`);
- if(S.tab==='portal'){
+ if(S.tab==='preflight'){
+  if(c.application_type!=='study_permit'){
+   content=panel('Internal form preflight','<div class="panel-body"><div class="callout">The mapped preflight is only available for synthetic study permit cases. Other forms remain unsupported.</div></div>');
+  }else{
+   let html='<div class="warning-text">INTERNAL preparation check only. This does not produce a validated IRCC PDF or authorize government submission.</div>';
+   html+='<p>'+btn('Outside Canada · IMM1294','filingContext:outside_canada','smallbtn')+' '+btn('Inside Canada · IMM5709','filingContext:inside_canada','smallbtn')+'</p>';
+   let actionButton='';
+   S.preflight=null;
+   if(S.filingContext){
+    const code=S.filingContext==='inside_canada'?'IMM5709':'IMM1294';
+    const root=q()+'/ircc/cases/'+S.caseId+'/forms/'+code+'/preflight?filing_context='+encodeURIComponent(S.filingContext);
+    const pre=await api(root);
+    S.preflight=pre;
+    html+='<div class="callout"><strong>'+h(pre.code)+'</strong> · '+h(pre.internal_preflight_status.replaceAll('_',' '))+' · Acknowledgement: '+h(pre.acknowledgement)+'</div>';
+    html+='<div class="meta">Official source observed '+h(pre.observed_on)+' · '+h(pre.observed_revision)+'</div>';
+    if(pre.blockers.length)html+='<h3>Blocking review items</h3><ul>'+pre.blockers.map(x=>'<li>'+h(x)+'</li>').join('')+'</ul>';
+    else html+='<div class="callout">The limited internal preflight has no blocking items. Official PDF preparation and IRCC submission remain unavailable.</div>';
+    html+=table(['Mapped field','Verified value','Evidence status'],pre.fields.map(x=>'<tr><td>'+h(x.label)+'<div class="meta">'+h(x.canonical_path)+'</div></td><td>'+h(x.value||'—')+'</td><td>'+h(x.status)+'</td></tr>'));
+    html+='<p class="meta">Snapshot SHA-256: '+h(pre.snapshot_sha256.slice(0,20))+'…</p>';
+    if(pre.acknowledgement==='stale')html+='<div class="warning-text">The last acknowledgement is stale. Re-review the case after resolving all blockers.</div>';
+    if(pre.internal_preflight_status==='reviewable' && pre.acknowledgement!=='current')
+     actionButton=btn('Acknowledge internal review','acknowledgePreflight','primary smallbtn');
+   }else html+=empty('Select filing context','The filing route cannot be inferred from citizenship or an address.');
+   content=panel('Evidence-bound form preflight','<div class="panel-body">'+html+'</div>',actionButton);
+  }
+ }
+if(S.tab==='portal'){
    const root=q()+`/cases/${S.caseId}/portal`;
    const [requests,submissions]=await Promise.all([api(root+'/requests'),api(root+'/submissions')]);
    content=panel('Client access and document intake',`<div class="panel-body"><div class="callout">Clients authenticate using a verified identity-provider email and a one-time invitation. A client sees only their linked case and its document requests. Uploaded files remain in quarantine until a malware scanner clears them.</div><p><a href="/client" target="_blank" rel="noopener noreferrer">Open the development client portal ↗</a></p><h3>Document requests</h3>${requests.length?requests.map(r=>`<div class="item-row"><div class="bullet">▤</div><div style="flex:1"><div class="item-title">${h(r.title)}</div><div class="meta">${h(r.document_type)} · ${h(r.instructions)} · Due ${d(r.due_at)}</div></div>${chip(r.status)}</div>`).join(''):empty('No document requests','Ask the client for a document.')}<h3>Client submissions</h3>${submissions.length?submissions.map(s=>`<div class="item-row"><div class="bullet">↥</div><div style="flex:1"><div class="item-title">Received submission ${h(s.id.slice(0,8))}</div><div class="meta">${d(s.created_at)} · ${h(s.document_id.slice(0,8))}</div></div>${chip(s.scan_status)} ${s.scan_status==='quarantined'?btn('Scan','scanSubmission:'+s.id,'smallbtn'):''}</div>`).join(''):empty('No client submissions','Client uploads will appear here after receipt.')}</div>`,btn('Create invitation','newPortalInvite','smallbtn')+' '+btn('+ Request document','newPortalRequest','primary smallbtn'));
@@ -162,6 +188,15 @@ function changeStatus(){const caseObj=S.data.cases.find(x=>x.id===S.caseId);cons
 async function downloadDoc(id){const doc=S.data.docs.find(x=>x.id===id);const res=await api(q()+`/cases/${S.caseId}/documents/${id}/download`,{raw:true});const blob=await res.blob();const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=doc?.filename||'document';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000)}
 async function eventHandler(e){const tab=e.target.closest('[data-tab]');if(tab){S.tab=tab.dataset.tab;return render().catch(fail)}const row=e.target.closest('[data-case]');if(row){S.caseId=row.dataset.case;S.view='cases';S.tab='overview';S.filingContext=null;return render().catch(fail)}const act=e.target.closest('[data-action]');if(!act)return;const action=act.dataset.action;
  try{
+ if(action==='acknowledgePreflight'){
+  const pre=S.preflight;
+  if(!pre || pre.internal_preflight_status!=='reviewable')return toast('Resolve all internal review blockers first');
+  if(!confirm('Acknowledge only this INTERNAL field subset? This is not an IRCC form, professional eligibility decision, or permission to submit.'))return;
+  const url=q()+'/ircc/cases/'+S.caseId+'/forms/'+pre.code+'/preflight/acknowledge?filing_context='+encodeURIComponent(S.filingContext);
+  await api(url,{method:'POST',body:{snapshot_sha256:pre.snapshot_sha256}});
+  await render();
+  return toast('Internal evidence snapshot acknowledged; IRCC submission remains blocked');
+ }
  if(action.startsWith('filingContext:')){S.filingContext=action.split(':')[1];return await render()}
 if(action==='requestEvidence'){
  if(!S.filingContext)return toast('Select filing context first');

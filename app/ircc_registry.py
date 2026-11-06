@@ -13,7 +13,8 @@ from sqlalchemy.orm import Session
 
 from app.access import OrgAccess, READ_ROLES, allow, get_org_access
 from app.db import get_db
-from app.models import Case, CaseFact, CaseIssue
+from app.models import Case, CaseDocument, CaseFact, CaseIssue
+from app.portal_models import PortalSubmission
 
 
 @dataclass(frozen=True)
@@ -131,7 +132,22 @@ def preview_form_data(org_id: UUID, case_id: UUID, form_code: str,
         raise HTTPException(404, 'Form not in the reviewed registry')
     if source.application_type != case.application_type or source.filing_context != filing_context:
         raise HTTPException(409, 'Form does not match the case application type and declared filing context')
-    facts = db.scalars(select(CaseFact).where(CaseFact.org_id == org_id, CaseFact.case_id == case_id)).all()
+    # Preview must not surface even a previously verified fact from a client
+    # document that is still quarantined, rejected, or linked to another case.
+    all_facts = db.scalars(select(CaseFact).where(
+        CaseFact.org_id == org_id, CaseFact.case_id == case_id)).all()
+    document_ids = set(db.scalars(select(CaseDocument.id).where(
+        CaseDocument.org_id == org_id, CaseDocument.case_id == case_id)).all())
+    blocked_ids = set(db.scalars(select(PortalSubmission.document_id).where(
+        PortalSubmission.org_id == org_id, PortalSubmission.case_id == case_id,
+        PortalSubmission.scan_status != 'cleared')).all())
+    facts = [f for f in all_facts if f.document_id is None or
+             (f.document_id in document_ids and f.document_id not in blocked_ids)]
     issues = db.scalar(select(func.count()).select_from(CaseIssue).where(
         CaseIssue.org_id == org_id, CaseIssue.case_id == case_id, CaseIssue.status == 'open')) or 0
-    return preview(source, facts, issues)
+    result = preview(source, facts, issues)
+    excluded = len(all_facts) - len(facts)
+    result['excluded_untrusted_document_facts'] = excluded
+    if excluded:
+        result['warnings'].append('Facts linked to quarantined or cross-case documents were excluded.')
+    return result
