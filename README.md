@@ -135,3 +135,18 @@ This release intentionally uses a dependency-light web UI for a working preview 
 - `scripts/` smoke tests and PostgreSQL security checks
 - `docs/` architecture, risk and acceptance references carried forward from v0.2
 - `RUN_WINDOWS.bat` and `CHECK_WINDOWS.bat` for Windows users
+
+## v0.5 — Optional development malware-scanning pipeline
+
+ClamAV is **opt-in** because its signature engine may need roughly 4 GB RAM. The official `clamav/clamav:stable` image runs only on an internal Docker network and does not publish its unauthenticated port to the host. The adapter uses ClamAV `zINSTREAM` framing with a strict 8 MB input bound and fail-closed handling. It does not send a filename, path or identifying client metadata to the scanner.
+
+To enable **fictional-data scanning only** on Windows PowerShell:
+
+```powershell
+$env:CLAMAV_ENABLED='true'
+docker compose --profile scanner up -d --build
+```
+
+ClamAV may take time to initialize and update signatures. If unavailable, the scan API returns HTTP 503 and keeps the document quarantined. In the consultant matter's **Portal** tab, use **Scan** on a quarantined synthetic client upload. A clean verdict releases it from quarantine for normal **development-only** evidence extraction; a malware-detection verdict rejects it, and unclear errors never release it. Virus scanning alone is not equivalent to safe PDF parsing/CDR. Production uploads remain disabled and require independent privacy/security review, durable scan workers, retention rules and monitoring.
+
+References: [ClamAV INSTREAM protocol](https://docs.clamav.net/manual/Usage/ClamdProtocol.html), [official ClamAV Docker guidance](https://docs.clamav.net/manual/Installing/Docker.html), [OWASP file upload safety](https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html).
