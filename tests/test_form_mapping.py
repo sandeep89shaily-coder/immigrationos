@@ -97,3 +97,31 @@ def test_document_in_other_case_or_missing_mapping_denied():
         resolve_verified_form_fields(org_id=org, case_id=case,
             documents=[doc], facts=[fact], scan_status_by_document={doc.id:"cleared"},
             field_to_canonical={})
+
+
+def test_end_to_end_verified_evidence_to_synthetic_pdf():
+    from io import BytesIO
+    from pypdf import PdfReader
+    from app.pdf_form_adapter import fill_static_acroform
+    from tests.test_pdf_form_adapter import synthetic_form, approved
+
+    org, case, doc, first = synthetic()
+    family = replace_namespace(first, id=uuid4(), field_path="identity.family_name", value="Applicant")
+    packet = resolve_verified_form_fields(
+        org_id=org, case_id=case,
+        field_to_canonical={
+            "given_name": "identity.given_name",
+            "family_name": "identity.family_name",
+        },
+        facts=[first, family], documents=[doc],
+        scan_status_by_document={doc.id:"cleared"},
+    )
+    assert packet.review_only is True
+    official_claims = 0  # a synthetic fixture is not an IRCC-approved template
+    assert official_claims == 0
+    pdf = synthetic_form()
+    result = fill_static_acroform(pdf, packet.values, approved(pdf))
+    reader = PdfReader(BytesIO(result))
+    assert reader.get_fields()["given_name"]["/V"] == "Sample"
+    assert reader.get_fields()["family_name"]["/V"] == "Applicant"
+    assert packet.evidence_ids["family_name"] == [str(family.id)]
