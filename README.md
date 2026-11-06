@@ -150,3 +150,9 @@ docker compose --profile scanner up -d --build
 ClamAV may take time to initialize and update signatures. If unavailable, the scan API returns HTTP 503 and keeps the document quarantined. In the consultant matter's **Portal** tab, use **Scan** on a quarantined synthetic client upload. A clean verdict releases it from quarantine for normal **development-only** evidence extraction; a malware-detection verdict rejects it, and unclear errors never release it. Virus scanning alone is not equivalent to safe PDF parsing/CDR. Production uploads remain disabled and require independent privacy/security review, durable scan workers, retention rules and monitoring.
 
 References: [ClamAV INSTREAM protocol](https://docs.clamav.net/manual/Usage/ClamdProtocol.html), [official ClamAV Docker guidance](https://docs.clamav.net/manual/Installing/Docker.html), [OWASP file upload safety](https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html).
+
+## v0.6 — Observed IRCC form-source and evidence-mapping registry
+
+The read-only staff API `/api/v1/orgs/{org_id}/ircc/forms` records the official IMM 1294 and IMM 5709 instruction pages, their observed June 2026 revision labels, source-check date and inside/outside-Canada filing contexts. The case endpoint `/api/v1/orgs/{org_id}/ircc/cases/{case_id}/forms/{form_code}/preview?filing_context=outside_canada` reports **internal** field-coverage previews from human-verified case facts and source IDs. Wrong tenant, case type or filing context is blocked. A stale-source warning is raised after 30 days, and **all previews remain blocked from official filing**, even when every displayed fact is verified. This is not a PDF form-filling engine.
+
+See `docs/IRCC_FORM_REGISTRY.md` for official references and the release criteria for future IRCC PDF adapters.
