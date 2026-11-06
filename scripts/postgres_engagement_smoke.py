@@ -26,7 +26,7 @@ def principal():
 app.dependency_overrides[get_principal] = principal
 
 source = b"%PDF-1.4\nSynthetic signed service agreement\n%%EOF\n"
-engagement.save_blob = lambda data, mime: ("2"*32, sha256(data).hexdigest())
+engagement.save_blob = lambda data, mime: (uuid4().hex, sha256(data).hexdigest())
 engagement.load_blob = lambda key: source
 engagement.delete_failed_blob = lambda key: None
 
