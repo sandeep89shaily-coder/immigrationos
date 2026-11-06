@@ -85,7 +85,7 @@ def my_organizations(db: Session = Depends(get_db), principal: Principal = Depen
 @app.post("/api/v1/orgs/{org_id}/clients", response_model=ClientRead, status_code=201, tags=["clients"])
 def create_client(org_id: UUID, payload: ClientCreate, db: Session = Depends(get_db), access: OrgAccess = Depends(get_org_access)):
     allow(access, WRITE_ROLES)
-    client = Client(org_id=org_id, **payload.model_dump())
+    client = Client(org_id=org_id, created_by_sub=access.principal.sub, **payload.model_dump())
     db.add(client)
     db.flush()
     record_event(db, access, "client.created", "client", client.id)
