@@ -21,7 +21,8 @@ from app.main import record_event
 from app.models import Case, CaseDocument, Client
 from app.portal_models import DocumentRequest, PortalGrant, PortalInvitation, PortalSubmission
 from app.schemas import Role
-from app.storage import MAX_BYTES, delete_failed_blob, save_blob
+from app.storage import MAX_BYTES, delete_failed_blob, load_blob, save_blob
+from app.malware_scan import scan_bytes, ScannerUnavailable
 
 staff_router = APIRouter(prefix='/api/v1/orgs/{org_id}/cases/{case_id}/portal', tags=['client-portal-staff'])
 router = APIRouter(prefix='/api/v1/client', tags=['client-portal'])
@@ -120,6 +121,8 @@ class SubmissionRead(BaseModel):
     request_id: UUID
     document_id: UUID
     scan_status: str
+    scan_engine: str | None = None
+    scanned_at: datetime | None = None
     created_at: datetime
 
 
@@ -193,6 +196,41 @@ def staff_submissions(org_id: UUID, case_id: UUID, db: Session = Depends(get_db)
     ensure_staff_case(db, org_id, case_id)
     return db.scalars(select(PortalSubmission).where(PortalSubmission.org_id == org_id,
                       PortalSubmission.case_id == case_id).order_by(PortalSubmission.created_at)).all()
+
+
+@staff_router.post('/submissions/{submission_id}/scan', response_model=SubmissionRead)
+def scan_portal_submission(org_id: UUID, case_id: UUID, submission_id: UUID,
+                           db: Session = Depends(get_db), access: OrgAccess = Depends(get_org_access)):
+    # DEV preview: scans one 8MB max file synchronously. Production requires a durable,
+    # independently isolated scan worker and stronger CDR/retention guarantees.
+    allow(access, STAFF)
+    ensure_staff_case(db, org_id, case_id)
+    submission = db.scalar(select(PortalSubmission).where(
+        PortalSubmission.org_id == org_id, PortalSubmission.case_id == case_id,
+        PortalSubmission.id == submission_id).with_for_update())
+    if submission is None:
+        raise HTTPException(404, 'Submission not found')
+    if submission.scan_status != 'quarantined':
+        raise HTTPException(409, 'Submission already has a final scanning decision')
+    doc = db.scalar(select(CaseDocument).where(CaseDocument.org_id == org_id,
+                    CaseDocument.case_id == case_id, CaseDocument.id == submission.document_id))
+    if doc is None:
+        raise HTTPException(404, 'Source document unavailable')
+    raw = load_blob(doc.storage_key)
+    if hashlib.sha256(raw).hexdigest() != doc.sha256:
+        raise HTTPException(503, 'File integrity check failed; remains quarantined')
+    try:
+        verdict = scan_bytes(raw)
+    except ScannerUnavailable:
+        # Fail closed: retain quarantine, do not log confidential file contents.
+        raise HTTPException(503, 'Scanning failed or is unavailable; file remains quarantined') from None
+    submission.scan_status = verdict.status
+    submission.scan_engine = verdict.engine
+    submission.scanned_at = now()
+    record_event(db, access, 'portal.malware_scan_' + verdict.status,
+                 'portal_submission', submission.id, {'engine': verdict.engine})
+    db.commit()
+    return submission
 
 
 @staff_router.post('/grants/{grant_id}/revoke')
