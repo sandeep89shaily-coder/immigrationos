@@ -44,8 +44,16 @@ class ProspectCreate(BaseModel):
 
     @model_validator(mode="after")
     def check_contact(self):
-        if not (self.email or self.phone):
-            raise ValueError("Provide a prospect email or phone")
+        self.first_name = self.first_name.strip()
+        self.last_name = self.last_name.strip()
+        self.email = (self.email or "").strip().lower() or None
+        self.phone = (self.phone or "").strip() or None
+        self.consent_source = (self.consent_source or "").strip() or None
+        if not self.first_name or not self.last_name or not (self.email or self.phone):
+            raise ValueError("Names and email or phone are required")
+        if self.email and (self.email.count("@") != 1 or
+                           " " in self.email or "." not in self.email.split("@", 1)[1]):
+            raise ValueError("Enter a valid prospect email format")
         if self.outreach_consent and not self.consent_source:
             raise ValueError("Record how outreach consent was obtained")
         return self
@@ -111,6 +119,16 @@ class AgreementInput(BaseModel):
 
     @model_validator(mode="after")
     def valid_fee(self):
+        critical = ("licensee_name", "licensee_registration_number",
+                    "licensee_address", "licensee_phone", "licensee_email",
+                    "client_address", "purpose_scope", "regulator_description")
+        for key in critical:
+            cleaned = getattr(self, key).strip()
+            if len(cleaned) < 3:
+                raise ValueError("Blank or whitespace-only required agreement fields are not accepted")
+            setattr(self, key, cleaned)
+        if "@" not in self.licensee_email or " " in self.licensee_email:
+            raise ValueError("A consultant email address must have valid format")
         if self.pro_bono != (self.fee_cents_cad == 0):
             raise ValueError("A pro bono consultation must have a zero fee, and vice versa")
         return self
