@@ -23,6 +23,7 @@ jobs:
         run: |
           node --check app/static/workspace.js
           node --check app/static/crm.js
+          node --check app/static/engagement.js
           node --check app/static/client.js
 
   postgres-isolation:
