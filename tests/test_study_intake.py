@@ -182,3 +182,34 @@ def test_other_firm_case_is_hidden_even_with_valid_client_identity(api):
                  email="sample.person@example.test").status_code == 200
     assert client.get(_client_url(case)).status_code == 404
     assert client.get(_client_url(case2)).status_code == 200
+
+
+def test_client_submission_invalidates_preflight_and_evidence_review_fingerprint(api):
+    client, who, factory = api
+    org, case, staff = _open_client(api, "questionnaire-stale-review")
+    who["sub"] = staff
+    preflight = (f"/api/v1/orgs/{org}/ircc/cases/{case}/forms/IMM1294/"
+                 "preflight?filing_context=outside_canada")
+    review = (f"/api/v1/orgs/{org}/cases/{case}/reviews/current"
+              "?filing_context=outside_canada")
+    before_form = client.get(preflight)
+    before_review = client.get(review)
+    assert before_form.status_code == 200, before_form.text
+    assert before_review.status_code == 200, before_review.text
+    original_form_sha = before_form.json()["snapshot_sha256"]
+    original_review_sha = before_review.json()["case_sha256"]
+
+    who.update(sub="questionnaire-stale-review-client",
+               email="sample.person@example.test", email_verified=True)
+    saved = _submit(client, case)
+    assert saved.status_code == 201, saved.text
+
+    who.update(sub=staff, email=None, email_verified=False)
+    after_form = client.get(preflight)
+    after_review = client.get(review)
+    assert after_form.status_code == 200, after_form.text
+    assert after_review.status_code == 200, after_review.text
+    assert after_form.json()["snapshot_sha256"] != original_form_sha
+    assert after_review.json()["case_sha256"] != original_review_sha
+    assert any("questionnaire answers await consultant decisions" in reason.lower()
+               for reason in after_form.json()["blockers"])
