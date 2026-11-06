@@ -1,0 +1,27 @@
+name: IMM 5476 official blank-template observation
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "7 13 * * 1"
+permissions:
+  contents: read
+jobs:
+  public-blank-template:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install inspection dependencies
+        run: pip install -e .
+      - name: Observe currently published IMM 5476 (no approvals)
+        run: python -m scripts.observe_imm5476_template --output reports/imm5476-observation.json
+      - name: Save technical observation even if source is unreachable
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: imm5476-technical-observation
+          path: reports/imm5476-observation.json
+          retention-days: 30

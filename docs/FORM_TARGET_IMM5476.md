@@ -78,3 +78,33 @@ passes; and an RCIC reviewer approves the release. A template upload alone
 does not satisfy this contract.
 
 Current official form-autofill count remains **0**, even after this milestone.
+
+
+## Official blank-template observation pipeline
+
+The form-factory research job downloads the **public blank PDF only** from
+the exact reviewed IRCC HTTPS URL. It performs transient, read-only PDF
+structure inspection and writes a JSON observation (SHA-256, field structure,
+XFA/action indicators and compatibility category). It does not save PDF
+bytes, process client documents, publish mappings or approve releases.
+
+Run the same one-shot observation locally if the hosted government connection
+is unavailable:
+
+\`python -m scripts.observe_imm5476_template --output reports/imm5476-observation.json\`
+
+After a current official template SHA-256 has been independently reviewed
+and approved, use \`--expected-sha256 <64-character lowercase sha256>\`
+to flag a changed download as \`changed_bytes\`. A matching checksum is only
+evidence of byte identity; it does not verify legal, Adobe, barcode, signature,
+or application-context requirements.
+
+The separate \`IMM 5476 official blank-template observation\` GitHub workflow
+supports manual dispatch and a weekly schedule. It stores technical
+observations as short-retention Actions artifacts. Network failures produce
+an explicit \`unavailable_or_not_inspectable\` observation and a failed
+monitoring run; they do not alter \`main\`, claim a current form, or block
+the unrelated application release tests.
+
+**Current status:** no approved baseline hash and no validated official
+form generation. Continue to report zero supported IRCC official PDF outputs.
