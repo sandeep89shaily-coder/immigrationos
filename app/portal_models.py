@@ -84,4 +84,6 @@ class PortalSubmission(Base):
     document_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     uploaded_by_sub: Mapped[str] = mapped_column(String(255), nullable=False)
     scan_status: Mapped[str] = mapped_column(String(16), nullable=False, default='quarantined')
+    scan_engine: Mapped[str | None] = mapped_column(String(60))
+    scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
