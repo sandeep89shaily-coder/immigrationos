@@ -35,7 +35,8 @@ class CreateFollowUp(BaseModel):
             raise ValueError("Follow-up title must not be blank")
         if self.due_at.tzinfo is None:
             raise ValueError("Follow-up due time requires explicit timezone offset")
-        if not now() < self.due_at.astimezone(timezone.utc) <= now() + timedelta(days=366*3):
+        self.due_at = self.due_at.astimezone(timezone.utc)
+        if not now() < self.due_at <= now() + timedelta(days=366*3):
             raise ValueError("Follow-up must be in the future, within three years")
         return self
 
