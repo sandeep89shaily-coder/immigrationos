@@ -213,13 +213,13 @@ def test_roles_cross_tenant_and_client_specific_fks(api):
     with factory() as db:
         db.add(Membership(org_id=UUID(org), subject="viewer-user", role="viewer", is_active=True))
         db.commit()
-    assert client.get(url).status_code == 200
+    assert client.get(url).status_code == 404
     assert client.post(url + "/screens", json={
         "client_identity_verified": True, "previous_rep_checked": True,
         "prior_rep": "none", "conflict_status": "none_identified",
         "details": "Written fictional review of prior representation and conflicts.",
-        "independently_reviewed_conflicts": True}).status_code == 403
-    assert open_matter(client, url).status_code == 403
+        "independently_reviewed_conflicts": True}).status_code == 404
+    assert open_matter(client, url).status_code == 404
     who["sub"] = "outsider-user"
     assert client.get(url).status_code == 404
     who["sub"] = "test-user-a"
