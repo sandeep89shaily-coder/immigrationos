@@ -85,3 +85,22 @@ this project.** The existing two study permit templates are internal previews.
 
 **Production posture:** Development with synthetic data only. Neither the
 index-importer nor the synthetic adapter handles actual client submissions.
+
+
+## Verified-data-to-PDF mapping harness
+
+\`app/form_mapping.py\` resolves an independently reviewed canonical-to-PDF
+field mapping using case-bound facts and source documents. It blocks mapped
+facts that lack a human reviewer, originate from an unscanned/quarantined
+document, conflict with another verified value, or originate outside the
+current matter/firm. It supports a single verified value appearing in multiple
+approved form fields (for example, repeated name fields).
+
+The result is a **source-linked, review-only packet** with fact IDs, document
+IDs, and an evidence fingerprint. Synthetic integration tests join this packet
+to \`app/pdf_form_adapter.py\` and read the PDF back for exact-value comparison.
+
+These building blocks are **not exposed as a production form submission API**.
+Before any official release, a separate approved form profile, release manifest,
+legal/program context, current version and Adobe/portal validation must be
+implemented and tested; staff documents also require verified malware scanning.
