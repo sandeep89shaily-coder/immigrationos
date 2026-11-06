@@ -16,7 +16,8 @@ from sqlalchemy.orm import Session
 from app.case_scope_models import CaseAccessGrant
 from app.engagement_models import (EngagementScreen, MatterAssignment,
                                    ServiceAgreementDraft, ServiceSignedCopy)
-from app.models import Case, Membership
+from app.models import Case, Client, Membership
+from app.crm_models import Prospect
 from app.schemas import Role
 from app.settings import get_settings
 
@@ -62,6 +63,46 @@ def visible_case_filter(org_id: UUID, sub: str, role: Role):
         )
     # Viewers do not get case access merely by firm membership.
     return and_(Case.org_id == org_id, Case.id.is_(None))
+
+
+def visible_client_filter(org_id: UUID, sub: str, role: Role):
+    """Client directory visibility: creator, originating prospect, or assigned matter."""
+    if role in MANAGERS:
+        return Client.org_id == org_id
+    if role == Role.consultant:
+        return and_(Client.org_id == org_id,
+            or_(Client.created_by_sub == sub,
+                exists(select(Prospect.id).where(
+                    Prospect.org_id == org_id,
+                    Prospect.converted_client_id == Client.id,
+                    Prospect.assigned_to_sub == sub)),
+                exists(select(MatterAssignment.id).where(
+                    MatterAssignment.org_id == org_id,
+                    MatterAssignment.client_id == Client.id,
+                    MatterAssignment.professional_sub == sub))))
+    if role == Role.assistant:
+        return and_(Client.org_id == org_id, exists(
+            select(Case.id).where(
+                Case.org_id == org_id, Case.client_id == Client.id,
+                exists(select(CaseAccessGrant.id).where(
+                    CaseAccessGrant.org_id == org_id,
+                    CaseAccessGrant.case_id == Case.id,
+                    CaseAccessGrant.subject == sub,
+                    CaseAccessGrant.revoked_at.is_(None))))))
+    return and_(Client.org_id == org_id, Client.id.is_(None))
+
+
+def require_client_permission(db: Session, access, client_id: UUID, request_path: str):
+    """Prevent cross-client agreement lookup by unrelated staff members."""
+    client = db.scalar(select(Client.id).where(
+        Client.id == client_id,
+        visible_client_filter(access.org_id, access.principal.sub, access.role)))
+    if client is None:
+        raise HTTPException(404, "Client not available")
+    # Assistant grants authorize contact data for assigned matters, not the
+    # confidential contract/conflict-screen dossier.
+    if access.role == Role.assistant and "/engagements/" in request_path:
+        raise HTTPException(404, "Client not available")
 
 
 def visible_case_ids(org_id: UUID, sub: str, role: Role):
