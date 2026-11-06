@@ -71,3 +71,34 @@ Within \`/api/v1/orgs/{org_id}/engagements\`:
 3. Proper s.24 amendment co-signing workflow, historical agreement exports, audit-ready file closure.
 4. Fee invoicing and **real double-entry trust subledgers** reviewed by an RCIC and accountant before external payment integrations.
 5. Official IRCC form factory remains a parallel core workstream. Validated form count is still **zero** until actual Adobe/IRCC workflow tests pass.
+
+
+## Historical versions and case-level staleness (next increment)
+
+The product now exposes **immutable professional decision history** and a
+case-specific comparison to the latest service agreement and conflict screen:
+
+- \`GET /api/v1/orgs/{org_id}/engagements/clients/{client_id}/history\` lists
+  recent professional screens and service agreement versions, their checksums,
+  signed-copy scan/review state, and which versions have been superseded.
+  Detailed history access requires owner/admin/consultant roles.
+- \`GET /api/v1/orgs/{org_id}/engagements/cases/{case_id}\` shows the signed
+  agreement revision actually linked when the case was opened, assigned staff
+  professional and whether the current latest screen/draft still matches.
+  This status is visible to firm members, consistent with the current
+  firm-wide case access scope.
+
+A new unsigned draft or updated conflict review flags **professional
+reconciliation required** on existing assigned matters rather than silently
+treating the original agreement as current. It does **not** declare that the
+old legal agreement ceased to exist or that any amendment is legally binding.
+
+Older cases made through the legacy direct case-create route are labelled
+**unlinked/legacy draft**: the software does not imply their engagement was
+approved. The consultant's Clients engagement page has a revision-history
+view; the case overview shows current/unlinked/stale engagement status.
+
+This remains an **advisory signal, not an authorization engine**. Existing
+non-engagement-gated routes and firm-wide case read permissions are still
+supported for synthetic development; production work requires separate
+case assignment-scoped authorization and s.24 professional legal review.
