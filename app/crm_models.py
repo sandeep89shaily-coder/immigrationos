@@ -130,6 +130,7 @@ class ConsultationSignedCopy(Base):
     client_copy_provided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     scan_status: Mapped[str] = mapped_column(String(16), nullable=False, default="quarantined")
     review_status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    review_note: Mapped[str | None] = mapped_column(String(800))
     reviewed_by_sub: Mapped[str | None] = mapped_column(String(255))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by_sub: Mapped[str] = mapped_column(String(255), nullable=False)
