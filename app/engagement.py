@@ -482,3 +482,99 @@ def engaged_matters(org_id: UUID, client_id: UUID,
     return [{"id": str(x.id), "case_id": str(x.case_id), "draft_id": str(x.draft_id),
              "professional_sub": x.professional_sub, "created_at": x.created_at,
              "staff_assignment_only": True} for x in rows]
+
+
+@router.get("/clients/{client_id}/history")
+def engagement_revision_history(
+    org_id: UUID, client_id: UUID,
+    db: Session = Depends(get_db), access: OrgAccess = Depends(get_org_access),
+):
+    """Show version changes without rewriting prior professional decisions."""
+    allow(access, REVIEW)
+    client_for(db, org_id, client_id)
+    current_screen = latest_screen(db, org_id, client_id)
+    current_draft = latest_draft(db, org_id, client_id)
+    screens = db.scalars(select(EngagementScreen).where(
+        EngagementScreen.org_id == org_id, EngagementScreen.client_id == client_id
+    ).order_by(EngagementScreen.created_at.desc(), EngagementScreen.id.desc()).limit(50)).all()
+    drafts = db.scalars(select(ServiceAgreementDraft).where(
+        ServiceAgreementDraft.org_id == org_id, ServiceAgreementDraft.client_id == client_id
+    ).order_by(ServiceAgreementDraft.version.desc()).limit(50)).all()
+    return {
+        "client_id": str(client_id),
+        "screens": [{
+            "id": str(e.id), "created_at": e.created_at,
+            "reviewer_sub": e.reviewer_sub, "prior_rep": e.prior_rep,
+            "conflict_status": e.conflict_status,
+            "currently_latest": bool(current_screen and e.id == current_screen.id),
+            "professional_attestation_only": True,
+        } for e in screens],
+        "drafts": [{
+            "id": str(d.id), "version": d.version, "sha256": d.sha256,
+            "created_at": d.created_at, "created_by_sub": d.created_by_sub,
+            "screen_id": str(d.screen_id),
+            "currently_latest": bool(current_draft and d.id == current_draft.id),
+            "screen_still_latest": bool(current_screen and d.screen_id == current_screen.id),
+            "signed_copy": {
+                "exists": bool(p := get_signed(db, org_id, client_id, d.id)),
+                "scan_status": p.scan_status if p else None,
+                "review_status": p.review_status if p else None,
+                "accepted_by_staff": proof_ready(p),
+            },
+        } for d in drafts],
+        "history_limit": 50,
+        "not_independent_regulatory_validation": True,
+    }
+
+
+@router.get("/cases/{case_id}")
+def case_engagement_status(
+    org_id: UUID, case_id: UUID,
+    db: Session = Depends(get_db), access: OrgAccess = Depends(get_org_access),
+):
+    """Reconcile actual case assignment with newest signed terms and conflict review.
+
+    Does not itself grant or revoke case access. A legacy case is reported as
+    unengaged; it is not implicitly authorized by another client's agreement.
+    """
+    allow(access, READ_ROLES)
+    case = db.scalar(select(Case).where(Case.org_id == org_id, Case.id == case_id))
+    if case is None:
+        raise HTTPException(404, "Case not found")
+    assignment = db.scalar(select(MatterAssignment).where(
+        MatterAssignment.org_id == org_id, MatterAssignment.case_id == case_id,
+        MatterAssignment.client_id == case.client_id))
+    if assignment is None:
+        return {
+            "case_id": str(case.id), "engagement_link_missing": True,
+            "assigned_professional_sub": None,
+            "has_current_reviewed_signed_agreement": False,
+            "requires_professional_reconciliation": True,
+            "warning": "Legacy/unlinked draft case. No signed service agreement is evidenced by the engagement module.",
+        }
+    bound = get_draft(db, org_id, case.client_id, assignment.draft_id)
+    evidence = get_signed(db, org_id, case.client_id, bound.id)
+    screen = latest_screen(db, org_id, case.client_id)
+    newest = latest_draft(db, org_id, case.client_id)
+    still_latest = bool(newest and newest.id == bound.id)
+    screen_matches = bool(screen and screen.id == bound.screen_id and screen_ready(screen))
+    signed_validated_by_staff = proof_ready(evidence)
+    current = still_latest and screen_matches and signed_validated_by_staff
+    return {
+        "case_id": str(case.id), "client_id": str(case.client_id),
+        "engagement_link_missing": False,
+        "assigned_professional_sub": assignment.professional_sub,
+        "agreement_version": bound.version, "agreement_sha256": bound.sha256,
+        "latest_agreement_version": newest.version if newest else None,
+        "assigned_agreement_is_latest": still_latest,
+        "assigned_screen_still_current_and_clear": screen_matches,
+        "linked_signed_copy_accepted_by_staff": signed_validated_by_staff,
+        "has_current_reviewed_signed_agreement": current,
+        "requires_professional_reconciliation": not current,
+        "warning": (
+            "Current staff-reviewed revision matches the case link. This does NOT prove regulatory authority."
+            if current else
+            "Newer agreement or conflict review requires professional reconciliation. "
+            "This status does not itself invalidate or amend a legal agreement."
+        ),
+    }
