@@ -13,7 +13,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -155,8 +155,15 @@ def questionnaire():
 
 
 def study_case(db: Session, org_id: UUID, case_id: UUID, lock: bool = False):
+    # Client portal principals have case SELECT but intentionally no UPDATE.
+    # PostgreSQL SELECT ... FOR UPDATE would require broader case privileges.
+    # Use a transaction-scoped advisory lock shared by client submissions and
+    # consultant decisions; RLS still authorizes the case read independently.
+    if lock and db.bind is not None and db.bind.dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 1))"),
+                   {"key": str(org_id) + ":" + str(case_id)})
     query = select(Case).where(Case.org_id == org_id, Case.id == case_id)
-    case = db.scalar(query.with_for_update() if lock else query)
+    case = db.scalar(query)
     if case is None:
         raise HTTPException(404, "Matter not found")
     if case.application_type != "study_permit":
