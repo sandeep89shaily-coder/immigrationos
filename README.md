@@ -1,8 +1,17 @@
-# ImmigrationOS Workspace v0.3
+# ImmigrationOS Workspace v0.4 — Client portal development preview
 
 **Status: functional development preview, not a commercial or production-ready immigration platform. Fictional data only.**
 
 A real FastAPI/PostgreSQL case-and-evidence workspace with OIDC sign-in, tenant-isolated records, a consultant dashboard, encrypted local development uploads, traceable fact suggestions, discrepancy detection, human review, internal form worksheets and task tracking. The code evolves the previously delivered v0.2 foundation; it does **not** reuse the v0.1 single-file Flask demo.
+
+## New in v0.4: verified-identity client intake
+
+- Consultant case → **Portal** tab: create document requests and single-use (48h) email-bound invitations. Tokens are displayed once and **not sent automatically**.
+- Client opens **http://localhost:8000/client**, signs in with OIDC + PKCE, enters the invitation token and sees only their explicitly granted case.
+- Development identity: `client.demo` / `DemoOnly-Client2026!` uses the fictional verified email `sample.person@example.test`; add a fictional client with that same email in the consultant workspace to create an invite.
+- Client document uploads are encrypted in the development store and **quarantined**; no access to extraction/download until a real malware scanning system is designed and integrated.
+- Staff can revoke portal access; a client cannot access staff CRM APIs or another client's cases. Client access requires an identity-provider-verified email, not a self-typed email.
+- This is not yet production-ready, and **no real client information should be used**. No emails are automatically sent.
 
 ## Try the complete Windows development preview
 
