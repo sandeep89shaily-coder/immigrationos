@@ -82,7 +82,8 @@ with engine.connect() as conn:
                          "crm_prospects", "crm_prospect_activities", "crm_consultations",
                          "crm_consultation_agreements", "crm_consultation_signed_copies", "crm_followups",
                          "engagement_screens", "service_agreement_drafts",
-                         "service_signed_copies", "matter_assignments", "case_access_grants"]
+                         "service_signed_copies", "matter_assignments", "case_access_grants",
+                         "staff_invitations"]
         policies = conn.execute(text("""SELECT relname, relrowsecurity, relforcerowsecurity
             FROM pg_class WHERE relname = ANY(:tables)"""), {"tables": tenant_tables}).all()
         assert len(policies) == len(tenant_tables), "RLS FAILED: missing tables"
@@ -143,6 +144,24 @@ with engine.connect() as conn:
         """)).one()
         assert scoped_grant_privileges == (False, False, False, False, True, False), \
             "RLS FAILED: case grant subjects/scopes could be changed by the app role"
+
+        staff_privileges = conn.execute(text("""SELECT
+            has_table_privilege(current_user, 'memberships', 'UPDATE'),
+            has_table_privilege(current_user, 'memberships', 'DELETE'),
+            has_table_privilege(current_user, 'staff_invitations', 'DELETE'),
+            has_column_privilege(current_user, 'staff_invitations', 'role', 'UPDATE'),
+            has_column_privilege(current_user, 'staff_invitations', 'token_hash', 'UPDATE'),
+            has_column_privilege(current_user, 'staff_invitations', 'accepted_by_sub', 'UPDATE'),
+            has_column_privilege(current_user, 'staff_invitations', 'revoked_at', 'UPDATE'),
+            has_function_privilege(current_user, 'ios_accept_staff_invitation(text)', 'EXECUTE'),
+            (SELECT rolbypassrls FROM pg_roles
+              WHERE rolname = (SELECT pg_get_userbyid(proowner) FROM pg_proc
+                               WHERE proname='ios_accept_staff_invitation' LIMIT 1))
+        """)).one()
+        assert staff_privileges == (False, False, False, False, False,
+                                    False, True, True, True), \
+            "RLS FAILED: unsafe membership privileges, invitation updates or definer ownership"
+
 
 
 

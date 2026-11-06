@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Index, String, UniqueConstraint, Uuid
+from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Index, String, UniqueConstraint, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -24,11 +24,15 @@ class Membership(Base):
     __tablename__ = "memberships"
     __table_args__ = (UniqueConstraint("org_id", "subject", name="uq_membership_org_subject"),
                       CheckConstraint("role IN ('owner','admin','consultant','assistant','viewer')", name="ck_membership_role"),
-                      Index("ix_memberships_subject", "subject"))
+                      Index("ix_memberships_subject", "subject"),
+                      Index("uq_membership_org_verified_email", "org_id", text("lower(verified_email)"),
+                            unique=True, sqlite_where=text("verified_email IS NOT NULL"),
+                            postgresql_where=text("verified_email IS NOT NULL")))
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     org_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
     subject: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(32), nullable=False)
+    verified_email: Mapped[str | None] = mapped_column(String(254))
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 

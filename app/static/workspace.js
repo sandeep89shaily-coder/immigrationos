@@ -32,7 +32,7 @@ async function login(){const verifier=enc(crypto.getRandomValues(new Uint8Array(
  const state=enc(crypto.getRandomValues(new Uint8Array(20)));
  sessionStorage.setItem('ios_oauth',JSON.stringify({verifier,state}));
  const url=new URL(`${S.config.issuer}/protocol/openid-connect/auth`);
- url.search=new URLSearchParams({client_id:S.config.client_id,redirect_uri:location.origin+'/app',response_type:'code',scope:'openid profile',code_challenge:challenge,code_challenge_method:'S256',state}).toString();
+ url.search=new URLSearchParams({client_id:S.config.client_id,redirect_uri:location.origin+'/app',response_type:'code',scope:'openid profile email',code_challenge:challenge,code_challenge_method:'S256',state}).toString();
  location.assign(url.toString());
 }
 async function oauthCallback(){const params=new URLSearchParams(location.search);const code=params.get('code');if(!code)return false;
@@ -61,13 +61,13 @@ async function init(){try{
  showShell();await firms();await render();
  }catch(e){showLogin(e.message||String(e))}}
 function fail(e){console.error(e);toast(e.message||'Unexpected error');}
-function nav(){document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.view===S.view));
- const labels={dashboard:'Practice overview',crm:'Prospects',cases:'Matters',clients:'Client directory',review:'Evidence review queue',tasks:'Task management',audit:'Audit history'};
+function nav(){document.querySelectorAll('.nav-item').forEach(x=>{x.classList.toggle('active',x.dataset.view===S.view);if(x.dataset.view==='team'){const role=S.orgs.find(o=>o.id===S.org)?.role;x.hidden=!['owner','admin'].includes(role)}});
+ const labels={dashboard:'Practice overview',crm:'Prospects',cases:'Matters',clients:'Client directory',team:'Practice team',review:'Evidence review queue',tasks:'Task management',audit:'Audit history'};
  $('breadcrumb').textContent=S.caseId?'Case workspace':(labels[S.view]||'ImmigrationOS');}
 function page(title,desc,tools=''){return `<div class="page-head"><div><div class="eyebrow">IMMIGRATIONOS / ${h(S.view).toUpperCase()}</div><h1>${h(title)}</h1><p>${h(desc)}</p></div><div>${tools}</div></div>`}
 function panel(title,inner,tools=''){return `<section class="panel"><div class="panel-head"><h2>${h(title)}</h2>${tools}</div>${inner}</section>`}
 function table(headers,rows){if(!rows.length)return empty('Nothing here yet','Create an entry to get started.');return `<div class="table-wrap"><table><thead><tr>${headers.map(x=>`<th>${h(x)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`}
-async function render(){nav();if(!S.org){$('mainContent').innerHTML=`${page('Set up your first firm','Create a fictional development firm to start working with sample matters.',btn('+ Create practice','newOrg','primary'))}<div class="callout">This is not an approved production product. Use fictional names and test documents only.</div>`;return}
+async function render(){nav();if(!S.org){$('mainContent').innerHTML=`${page('Set up your first firm','Create a fictional development firm to start working with sample matters.',btn('+ Create practice','newOrg','primary')+' '+btn('Join an invited practice','staff:join','smallbtn'))}<div class="callout">This is not an approved production product. Use fictional names and test documents only.</div>`;return}
  $('mainContent').innerHTML='<div class="loading">Loading workspace…</div>';
  try{if(S.caseId)return await renderCase();
  if(S.engagementClientId)return await renderEngagement();
@@ -75,6 +75,7 @@ async function render(){nav();if(!S.org){$('mainContent').innerHTML=`${page('Set
  if(S.view==='crm')await renderCRM();
  if(S.view==='cases')await renderCases();
  if(S.view==='clients')await renderClients();
+ if(S.view==='team')await renderStaffTeam();
  if(S.view==='review')await renderReviews();
  if(S.view==='tasks')await renderTasks();
  if(S.view==='audit')await renderAudit();
@@ -247,6 +248,7 @@ function changeStatus(){const caseObj=S.data.cases.find(x=>x.id===S.caseId);cons
 async function downloadDoc(id){const doc=S.data.docs.find(x=>x.id===id);const res=await api(q()+`/cases/${S.caseId}/documents/${id}/download`,{raw:true});const blob=await res.blob();const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=doc?.filename||'document';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000)}
 async function eventHandler(e){const tab=e.target.closest('[data-tab]');if(tab){S.tab=tab.dataset.tab;return render().catch(fail)}const cRow=e.target.closest('[data-engagement-client]');if(cRow){S.engagementClientId=cRow.dataset.engagementClient;S.caseId=null;S.prospectId=null;S.view='clients';return render().catch(fail)}const prow=e.target.closest('[data-prospect]');if(prow){S.prospectId=prow.dataset.prospect;S.caseId=null;S.view='crm';return render().catch(fail)}const row=e.target.closest('[data-case]');if(row){S.caseId=row.dataset.case;S.view='cases';S.tab='overview';S.filingContext=null;S.prospectId=null;return render().catch(fail)}const act=e.target.closest('[data-action]');if(!act)return;const action=act.dataset.action;
  try{
+ if(action.startsWith('staff:'))return await staffAction(action);
  if(action.startsWith('eg:'))return await egAction(action);
  if(action.startsWith('crm:'))return await crmAction(action);
  if(action.startsWith('repOperation:')){S.repOperation=action.split(':')[1];return await render()}

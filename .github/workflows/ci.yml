@@ -24,6 +24,7 @@ jobs:
           node --check app/static/workspace.js
           node --check app/static/crm.js
           node --check app/static/engagement.js
+          node --check app/static/staff.js
           node --check app/static/client.js
 
   postgres-isolation:
@@ -76,3 +77,5 @@ jobs:
         run: DATABASE_URL="$RLS_APP_DATABASE_URL" python scripts/postgres_crm_smoke.py
       - name: Exercise signed RCIC service engagement and matter assignment under PostgreSQL RLS
         run: MIGRATION_DATABASE_URL="$DATABASE_URL" DATABASE_URL="$RLS_APP_DATABASE_URL" python scripts/postgres_engagement_smoke.py
+      - name: Exercise verified staff invites and role revocation under PostgreSQL RLS
+        run: DATABASE_URL="$RLS_APP_DATABASE_URL" python scripts/postgres_staff_smoke.py

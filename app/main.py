@@ -57,7 +57,9 @@ def create_organization(payload: OrganizationCreate, db: Session = Depends(get_d
     try:
         db.add(org)
         db.flush()
-        db.add(Membership(org_id=org_id, subject=principal.sub, role=Role.owner.value, is_active=True))
+        db.add(Membership(org_id=org_id, subject=principal.sub, role=Role.owner.value, is_active=True,
+                          verified_email=principal.email.strip().casefold()
+                          if principal.email_verified and principal.email else None))
         # Audit RLS requires an active membership to exist before its INSERT.
         db.flush()
         record_event(db, OrgAccess(org_id, principal, Role.owner), "organization.created", "organization", org_id)
@@ -195,6 +197,9 @@ from app.crm_followups import router as crm_followups_router
 app.include_router(crm_followups_router)
 from app.case_staff import router as case_staff_router
 app.include_router(case_staff_router)
+from app.staff import router as practice_staff_router, claim_router as staff_claim_router
+app.include_router(practice_staff_router)
+app.include_router(staff_claim_router)
 from app.engagement import router as engagement_router
 app.include_router(engagement_router)
 from app.form_inspection_api import router as form_inspection_router
