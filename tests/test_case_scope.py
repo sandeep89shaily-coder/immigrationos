@@ -229,11 +229,11 @@ def test_all_firm_scoped_case_routes_share_authorization_dependency():
     # Newer FastAPI versions keep include_router() entries as _IncludedRouter
     # objects; inspect each source APIRouter, not only app.routes.
     from app import workspace, evidence_matrix, review_snapshots, form_preflight
-    from app import portal, study_intake, engagement, case_staff
+    from app import portal, study_intake, engagement, case_staff, application_package
     routers = [
         app, workspace.router, evidence_matrix.router, review_snapshots.router,
         form_preflight.router, portal.staff_router, study_intake.staff_router,
-        engagement.router, case_staff.router,
+        engagement.router, case_staff.router, application_package.router,
     ]
     checked = set()
     for router in routers:

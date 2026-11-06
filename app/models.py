@@ -89,6 +89,7 @@ class CaseDocument(Base):
     __tablename__ = "case_documents"
     __table_args__ = (
         UniqueConstraint("org_id", "id", name="uq_case_document_org_id"),
+        UniqueConstraint("org_id", "case_id", "id", name="uq_doc_org_case_id"),
         ForeignKeyConstraint(["org_id", "case_id"], ["cases.org_id", "cases.id"], name="fk_doc_case_same_tenant"),
         Index("ix_documents_case", "org_id", "case_id"),
     )

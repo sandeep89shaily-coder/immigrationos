@@ -4,6 +4,29 @@
 
 A real FastAPI/PostgreSQL case-and-evidence workspace with OIDC sign-in, tenant-isolated records, a consultant dashboard, encrypted local development uploads, traceable fact suggestions, discrepancy detection, human review, internal form worksheets and task tracking. The code evolves the previously delivered v0.2 foundation; it does **not** reuse the v0.1 single-file Flask demo.
 
+## Core application package (study permits first)
+
+The **Application package** tab in each synthetic study-permit case now
+brings together the selected filing route, its official form references,
+the source-linked evidence checklist, and immutable manually supplied
+PDF copy reviews. Choosing **inside Canada** selects IMM 5709; **outside
+Canada** selects IMM 1294. IMM 5476 may be included when the RCIC selects
+representative documentation for the matter.
+
+A staff member may upload a fictional completed PDF through Documents,
+link it to the form slot, receive a malware scan disposition and record
+a professional review. A replacement is a new historical copy, never an
+overwrite. The case-specific PDF cannot come from another firm or matter.
+The filing route cannot silently change afterward.
+
+**Current limit: zero officially autofilled IRCC PDFs, zero independently
+validated IRCC PDFs and zero government submission connections.**
+Scanned/accepted in the application means staff-reviewed *copy only*,
+not accepted by IRCC.
+
+This is the core development priority before expanding CRM extras or
+advertising a form count. [Workflow and tests](docs/CORE_APPLICATION_PACKAGE_V1.md).
+
 ## RCIC practice-team onboarding and permissions
 
 The **Practice team** area now supports fictional firm staff invitations

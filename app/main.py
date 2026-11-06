@@ -206,6 +206,8 @@ from app.form_inspection_api import router as form_inspection_router
 app.include_router(form_inspection_router)
 from app.form_workflow_profiles import router as form_workflow_router
 app.include_router(form_workflow_router)
+from app.application_package import router as application_package_router
+app.include_router(application_package_router)
 app.include_router(evidence_router)
 app.include_router(study_intake_client_router)
 app.include_router(study_intake_staff_router)
