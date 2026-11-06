@@ -4,6 +4,32 @@
 
 A real FastAPI/PostgreSQL case-and-evidence workspace with OIDC sign-in, tenant-isolated records, a consultant dashboard, encrypted local development uploads, traceable fact suggestions, discrepancy detection, human review, internal form worksheets and task tracking. The code evolves the previously delivered v0.2 foundation; it does **not** reuse the v0.1 single-file Flask demo.
 
+## RCIC practice-team onboarding and permissions
+
+The **Practice team** area now supports fictional firm staff invitations
+using a **single-use, 72-hour token** bound to an OIDC **verified email**.
+Owner invitations are intentionally unsupported. Firm owners can invite
+administrators, consultants, assistants and viewers; admins can invite
+consultants, assistants and viewers.
+
+The invited staff member signs in via OIDC, opens **Join an invited practice**,
+and pastes the token. Accepting the invitation records the exact invited role
+and adds **no automatic client-case access**. Case-specific assistant access
+is managed separately. Roles can be changed only within owner/admin
+permissions, and staff can be deactivated without deleting prior work.
+Tokens are never saved in plaintext to the database and are returned once
+for secure **manual delivery; no email is sent**.
+
+The PostgreSQL runtime role cannot directly rewrite membership records;
+narrow SECURITY DEFINER helpers handle verified-email acceptance, staff
+role changes and revocation under firm authorization constraints.
+
+**This is not production-approved** and does not validate professional CICC
+registration, legal eligibility for regulated work, or deliver invitation
+emails. Browser tests with Keycloak and independent data-security review
+remain outstanding. See
+[staff invitation architecture and threat controls](docs/RCIC_STAFF_INVITES_V1.md).
+
 ## Case assignment and engagement enforcement (development milestone)
 
 ImmigrationOS now checks **case-specific staff access** across the firm case
