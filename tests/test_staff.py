@@ -40,6 +40,7 @@ def test_invite_manual_link_accept_replay_and_onboarding(api):
     assert pending["items"][0]["status"] == "pending"
     assert raw not in str(pending)
     assert client.get(root + "/members").json()[0]["role"] == "owner"
+    assert client.get(root + "/me").json()["subject"] == "test-user-a"
 
     # Wrong email and unverified OIDC account cannot claim the token.
     switch(who, "assistant-id", "different@example.test")
