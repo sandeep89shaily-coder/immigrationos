@@ -16,7 +16,10 @@ from app.access import OrgAccess, WRITE_ROLES, allow, get_org_access
 from app.applicant_history_models import ApplicantHistory
 from app.db import get_db
 from app.main import record_event
-from app.models import Case, Client, CaseFact
+from app.models import Case, Client, CaseFact, CaseDocument
+from app.workspace import insert_fact_with_conflicts, ensure_case_open
+from app.workspace_schemas import FactCreate
+from app.schemas import Role
 
 router = APIRouter(prefix="/api/v1/orgs/{org_id}", tags=["applicant-history"])
 KINDS = ("address", "education", "employment", "travel")
@@ -92,6 +95,10 @@ def _validated_details(validator, details):
 def _client(db, org_id, client_id):
     if db.scalar(select(Client.id).where(Client.org_id == org_id, Client.id == client_id)) is None:
         raise HTTPException(404, "Client not available")
+
+
+def canonical_history_path(item, key: str) -> str:
+    return f"history.{item.kind}.r_{item.id.hex}.{key}"
 
 
 def _view(item):
@@ -178,7 +185,7 @@ def history_evidence_review(org_id: UUID, case_id: UUID,
         for key, value in item.details.items():
             if value is None:
                 continue
-            path = f"history.{item.kind}.{item.id}.{key}"
+            path = canonical_history_path(item, key)
             matches = evidence.get(path, [])
             values = {fact.value.strip() for fact in matches}
             status = ("not_evidence_reviewed" if not matches else
@@ -191,3 +198,45 @@ def history_evidence_review(org_id: UUID, case_id: UUID,
     return {"case_id": str(case_id), "records": results,
             "all_histories_verified": False, "official_form_generation_allowed": False,
             "warning": "Comparisons are informational. Supporting documents, gaps, chronology and professional applicability must be checked independently."}
+
+
+class HistoryEvidenceLink(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    document_id: UUID
+    source_page: int | None = Field(default=None, ge=1, le=10000)
+    source_excerpt: str | None = Field(default=None, min_length=10, max_length=500)
+
+
+@router.post("/cases/{case_id}/histories/{record_id}/fields/{field_key}/evidence", status_code=201)
+def link_history_evidence(org_id: UUID, case_id: UUID, record_id: UUID, field_key: str,
+                          payload: HistoryEvidenceLink, db: Session = Depends(get_db),
+                          access: OrgAccess = Depends(get_org_access)):
+    """Document-bound candidate fact, always pending until a separate professional review."""
+    allow(access, {Role.owner, Role.admin, Role.consultant})
+    case = ensure_case_open(db, org_id, case_id)
+    item = db.scalar(select(ApplicantHistory).where(
+        ApplicantHistory.org_id == org_id, ApplicantHistory.client_id == case.client_id,
+        ApplicantHistory.id == record_id))
+    if item is None:
+        raise HTTPException(404, "History item not available in this case")
+    value = item.details.get(field_key)
+    if not isinstance(value, str) or not value:
+        raise HTTPException(404, "History field not available")
+    source = db.scalar(select(CaseDocument).where(
+        CaseDocument.org_id == org_id, CaseDocument.case_id == case_id,
+        CaseDocument.id == payload.document_id))
+    if source is None:
+        raise HTTPException(404, "Supporting document not available in this case")
+    path = canonical_history_path(item, field_key)
+    # Deliberately no human-verification promotion. History edits leave prior
+    # facts intact; subsequent versions create conflicts for review.
+    fact = insert_fact_with_conflicts(db, access, case_id, FactCreate(
+        field_path=path, value=value, document_id=source.id,
+        source_page=payload.source_page, source_excerpt=payload.source_excerpt))
+    record_event(db, access, "applicant.history_evidence_linked", "case", case_id,
+                 {"record_id": str(record_id), "field_key": field_key,
+                  "fact_id": str(fact.id)})
+    db.commit()
+    return {"fact_id": str(fact.id), "field_path": path,
+            "review_status": "pending", "document_id": str(source.id),
+            "automatic_verification": False}
