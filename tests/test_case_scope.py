@@ -226,13 +226,23 @@ def test_all_firm_scoped_case_routes_share_authorization_dependency():
     from app.main import app
     from app.access import get_org_access
 
-    checked = []
-    for route in app.routes:
-        if not isinstance(route, APIRoute):
-            continue
-        if not route.path.startswith("/api/v1/orgs/{org_id}") or "{case_id}" not in route.path:
-            continue
-        dependencies = {dependency.call for dependency in route.dependant.dependencies}
-        assert get_org_access in dependencies, "Unprotected case route: " + route.path
-        checked.append(route.path)
-    assert len(checked) >= 25, [(r.path, r.name) for r in app.routes if 'case_id' in r.path]
+    # Newer FastAPI versions keep include_router() entries as _IncludedRouter
+    # objects; inspect each source APIRouter, not only app.routes.
+    from app import workspace, evidence_matrix, review_snapshots, form_preflight
+    from app import portal, study_intake, engagement, case_staff
+    routers = [
+        app, workspace.router, evidence_matrix.router, review_snapshots.router,
+        form_preflight.router, portal.staff_router, study_intake.staff_router,
+        engagement.router, case_staff.router,
+    ]
+    checked = set()
+    for router in routers:
+        for route in router.routes:
+            if not isinstance(route, APIRoute):
+                continue
+            if not route.path.startswith("/api/v1/orgs/") or "{case_id}" not in route.path:
+                continue
+            dependencies = {dependency.call for dependency in route.dependant.dependencies}
+            assert get_org_access in dependencies, "Unprotected case route: " + route.path
+            checked.add(route.path)
+    assert len(checked) >= 25, sorted(checked)
