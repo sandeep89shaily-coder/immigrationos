@@ -97,7 +97,7 @@ def upgrade():
                 (id, org_id, subject, role, is_active, verified_email, created_at)
             VALUES (gen_random_uuid(), invited.org_id, principal,
                     invited.role, TRUE, verified, now())
-            ON CONFLICT (org_id,subject) DO NOTHING
+            ON CONFLICT ON CONSTRAINT uq_membership_org_subject DO NOTHING
             RETURNING id INTO assigned_id;
             IF assigned_id IS NULL THEN RETURN; END IF;
             UPDATE public.staff_invitations si
