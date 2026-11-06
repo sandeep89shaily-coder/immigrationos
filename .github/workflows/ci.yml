@@ -25,6 +25,7 @@ jobs:
           node --check app/static/crm.js
           node --check app/static/engagement.js
           node --check app/static/staff.js
+          node --check app/static/application_package.js
           node --check app/static/client.js
 
   postgres-isolation:
