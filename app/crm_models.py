@@ -145,6 +145,13 @@ class ProspectFollowUp(Base):
                              name="fk_crm_followup_prospect"),
         CheckConstraint("status IN ('open','completed','cancelled')", name="ck_crm_followup_status"),
         CheckConstraint("priority IN ('normal','urgent')", name="ck_crm_followup_priority"),
+        CheckConstraint("""(status = 'open' AND completed_by_sub IS NULL AND completed_at IS NULL
+                                               AND cancelled_by_sub IS NULL AND cancelled_at IS NULL)
+                 OR (status = 'completed' AND completed_by_sub IS NOT NULL AND completed_at IS NOT NULL
+                                               AND cancelled_by_sub IS NULL AND cancelled_at IS NULL)
+                 OR (status = 'cancelled' AND cancelled_by_sub IS NOT NULL AND cancelled_at IS NOT NULL
+                                               AND completed_by_sub IS NULL AND completed_at IS NULL)""",
+                        name="ck_crm_followup_terminal_metadata"),
         Index("ix_crm_followups_due", "org_id", "status", "due_at"),
     )
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
