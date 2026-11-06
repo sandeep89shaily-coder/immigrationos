@@ -82,7 +82,7 @@ with engine.connect() as conn:
                          "crm_prospects", "crm_prospect_activities", "crm_consultations",
                          "crm_consultation_agreements", "crm_consultation_signed_copies", "crm_followups",
                          "engagement_screens", "service_agreement_drafts",
-                         "service_signed_copies", "matter_assignments"]
+                         "service_signed_copies", "matter_assignments", "case_access_grants"]
         policies = conn.execute(text("""SELECT relname, relrowsecurity, relforcerowsecurity
             FROM pg_class WHERE relname = ANY(:tables)"""), {"tables": tenant_tables}).all()
         assert len(policies) == len(tenant_tables), "RLS FAILED: missing tables"
@@ -132,6 +132,18 @@ with engine.connect() as conn:
         assert engagement_privileges == (
             False, False, False, False, False, False, False, False, True
         ), "RLS FAILED: signed agreement or immutable professional record could be overwritten"
+
+        scoped_grant_privileges = conn.execute(text("""SELECT
+            has_table_privilege(current_user, 'case_access_grants', 'DELETE'),
+            has_column_privilege(current_user, 'case_access_grants', 'subject', 'UPDATE'),
+            has_column_privilege(current_user, 'case_access_grants', 'scope', 'UPDATE'),
+            has_column_privilege(current_user, 'case_access_grants', 'case_id', 'UPDATE'),
+            has_column_privilege(current_user, 'case_access_grants', 'revoked_at', 'UPDATE'),
+            (SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user)
+        """)).one()
+        assert scoped_grant_privileges == (False, False, False, False, True, False), \
+            "RLS FAILED: case grant subjects/scopes could be changed by the app role"
+
 
 
 
