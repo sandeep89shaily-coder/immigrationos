@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ImmigrationOS · Client Portal</title><link rel="stylesheet" href="/app/static/client.css"></head>
+<body>
+<header class="top"><div class="logo">◎ <strong>ImmigrationOS</strong> <span>CLIENT PORTAL</span></div><div class="account"><a href="/app">Consultant workspace</a><button id="signout" class="secondary hidden">Sign out</button></div></header>
+<main class="container">
+<section id="welcome" class="hero"><div class="eyebrow">SECURE CASE INTAKE · DEVELOPMENT PREVIEW</div><h1>Your documents, organized.<br>Your case, in view.</h1><p>Sign in with a verified email address to claim an invitation from your immigration practice and respond to case-specific document requests.</p><button id="signin" class="primary">Sign in using Keycloak →</button><p class="warning">Synthetic data only. This preview is not approved for real immigration documents or personal information.</p></section>
+<section id="portal" class="hidden">
+<div class="heading"><div><div class="eyebrow">CLIENT WORKSPACE</div><h1>My immigration cases</h1><p>Only cases explicitly granted to your authenticated identity appear here.</p></div><button id="refresh" class="secondary">Refresh</button></div>
+<div class="card"><h2>Accept an invitation</h2><p>Paste the one-time invitation token received securely from your consultant. Your identity-provider email must match the invited email.</p><form id="claim"><label for="token">Invitation token</label><div class="entry"><input id="token" required autocomplete="off" spellcheck="false" placeholder="Paste one-time token"><button type="submit" class="primary">Accept invitation</button></div></form></div>
+<div id="cases"></div>
+</section>
+<p id="notice" role="status"></p></main>
+<script src="/app/static/client.js" defer></script>
+</body></html>

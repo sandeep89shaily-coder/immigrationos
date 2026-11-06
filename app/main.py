@@ -170,8 +170,11 @@ from pathlib import Path
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from app.workspace import router as workspace_router
+from app.portal import router as portal_router, staff_router as portal_staff_router
 
 app.include_router(workspace_router)
+app.include_router(portal_router)
+app.include_router(portal_staff_router)
 STATIC_DIR = Path(__file__).resolve().parent / 'static'
 app.mount('/app/static', StaticFiles(directory=STATIC_DIR), name='workspace-static')
 
@@ -189,3 +192,12 @@ def workspace_public_config():
     return {'issuer': get_settings().auth_issuer,
             'client_id': 'immigrationos-web', 'environment': get_settings().environment,
             'ai_enabled': get_settings().experimental_ai_enabled}
+
+
+@app.get('/client', include_in_schema=False)
+def client_portal_page():
+    return FileResponse(STATIC_DIR / 'client.html', headers={
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'no-store',
+        'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' http://localhost:8080 http://127.0.0.1:8080; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'",
+    })

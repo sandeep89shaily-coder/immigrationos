@@ -1,0 +1,43 @@
+/* Development-only client portal: OIDC PKCE and in-memory tokens; never store documents or tokens in localStorage. */
+'use strict';
+const S={config:null,token:null,refresh:null,expires:0};
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function notice(message){$('notice').textContent=message}
+const enc=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
+async function login(){const verifier=enc(crypto.getRandomValues(new Uint8Array(32)));
+ const challenge=enc(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(verifier)));
+ const state=enc(crypto.getRandomValues(new Uint8Array(20)));
+ sessionStorage.setItem('ios_client_pkce',JSON.stringify({state,verifier}));
+ const url=new URL(S.config.issuer+'/protocol/openid-connect/auth');
+ url.search=new URLSearchParams({client_id:S.config.client_id,response_type:'code',redirect_uri:location.origin+'/client',scope:'openid profile email',state,code_challenge:challenge,code_challenge_method:'S256'}).toString();
+ location.assign(url.toString());}
+function setTokens(t){S.token=t.access_token;S.refresh=t.refresh_token;S.expires=Date.now()+t.expires_in*1000}
+async function callback(){let qp=new URLSearchParams(location.search);let code=qp.get('code');if(!code)return false;
+ const saved=JSON.parse(sessionStorage.getItem('ios_client_pkce')||'null');sessionStorage.removeItem('ios_client_pkce');
+ if(!saved||qp.get('state')!==saved.state)throw Error('Invalid sign-in state');
+ const r=await fetch(S.config.issuer+'/protocol/openid-connect/token',{method:'POST',body:new URLSearchParams({client_id:S.config.client_id,grant_type:'authorization_code',redirect_uri:location.origin+'/client',code,code_verifier:saved.verifier})});
+ if(!r.ok)throw Error('Identity-provider sign-in failed');setTokens(await r.json());history.replaceState({},'',location.pathname);return true}
+async function api(path,options={}){if(!S.token)throw Error('Sign in first');if(Date.now()>S.expires-35000){
+ const r=await fetch(S.config.issuer+'/protocol/openid-connect/token',{method:'POST',body:new URLSearchParams({client_id:S.config.client_id,grant_type:'refresh_token',refresh_token:S.refresh})});
+ if(!r.ok)throw Error('Session expired. Sign in again.');setTokens(await r.json())}
+ const headers={Authorization:'Bearer '+S.token,...options.headers};
+ if(options.body&&!(options.body instanceof FormData)){headers['Content-Type']='application/json';options.body=JSON.stringify(options.body)}
+ const res=await fetch(path,{...options,headers,cache:'no-store'});
+ if(!res.ok){const payload=await res.json().catch(()=>({}));throw Error(payload.detail||`Request failed (${res.status})`)}
+ return res.json()}
+async function load(){const cases=await api('/api/v1/client/cases');if(!cases.length){$('cases').innerHTML='<div class="empty">No linked cases yet. Accept an invitation from your consultant to begin.</div>';return}
+ const blocks=[];for(const c of cases){const requests=await api(`/api/v1/client/cases/${encodeURIComponent(c.id)}/requests`);
+ blocks.push(`<section class="card"><h2>${esc(c.title)} <span class="status">${esc(c.status)}</span></h2><p>${esc(c.application_type.replaceAll('_',' '))}</p><h3>Requested documents</h3>${requests.length?requests.map(r=>`<div class="request"><div><strong>${esc(r.title)}</strong><div class="meta">${esc(r.instructions)}${r.due_at?' · Due '+esc(new Date(r.due_at).toLocaleDateString()):''}</div></div>${r.status==='open'&&c.status!=='closed'?`<form data-request="${esc(r.id)}" data-case="${esc(c.id)}"><input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.txt" required aria-label="Upload ${esc(r.title)}"><button class="primary" type="submit">Upload</button></form>`:`<span class="status">${esc(r.status)}</span>`}</div>`).join(''):'<p>No outstanding document requests.</p>'}</section>`)}$('cases').innerHTML=blocks.join('');}
+async function init(){try{S.config=await fetch('/app/config',{cache:'no-store'}).then(r=>r.json());$('signin').onclick=login;
+ $('signout').onclick=()=>{S.token=null;S.refresh=null;$('portal').classList.add('hidden');$('welcome').classList.remove('hidden');$('signout').classList.add('hidden');notice('Signed out of this browser session.')};
+ $('refresh').onclick=()=>load().catch(e=>notice(e.message));
+ $('claim').onsubmit=async e=>{e.preventDefault();try{await api('/api/v1/client/invitations/accept',{method:'POST',body:{token:$('token').value.trim()}});$('token').value='';notice('Invitation accepted.');await load()}catch(error){notice(error.message)}};
+ document.addEventListener('submit',async e=>{const form=e.target.closest('form[data-request]');if(!form)return;e.preventDefault();let b=form.querySelector('button');b.disabled=true;
+ try{const file=form.querySelector('input[type=file]').files[0];if(!file||file.size>8*1024*1024)throw Error('Maximum file size is 8 MB');
+ const payload=new FormData();payload.append('file',file);
+ const result=await api(`/api/v1/client/cases/${encodeURIComponent(form.dataset.case)}/requests/${encodeURIComponent(form.dataset.request)}/upload`,{method:'POST',body:payload});
+ notice('Upload received in quarantine for security screening. Your consultant will review it after scanning.');await load();}catch(error){notice(error.message)}finally{b.disabled=false}});
+ if(await callback()){$('welcome').classList.add('hidden');$('portal').classList.remove('hidden');$('signout').classList.remove('hidden');await load()}
+ }catch(error){notice(error.message)}}
+window.addEventListener('DOMContentLoaded',init);

@@ -23,3 +23,10 @@
 - A privacy impact assessment, data retention schedule, breach response plan, DPA review, and RCIC review workflow must be documented and verified.
 - OIDC/JWKS unavailability and signing-key rotation handling must be tested under failure conditions.
 - Do not open internet-facing routes until rate limits, abuse controls, real monitoring and hardened production identity are implemented.
+
+## v0.4 client portal changes
+
+- Invitations are 48-hour bearer capabilities, SHA-256 hashed at rest, single-use, bound to an OIDC-verified email, and revokeable before acceptance. A secure out-of-band delivery channel is **not** yet implemented.
+- Client identity has case-scoped grants only, no organization membership. PostgreSQL RLS has separate narrow portal policies; testing must include the actual limited PostgreSQL runtime role.
+- Portal uploads are in quarantine and cannot be read, parsed, downloaded or approved by consultants until malware scanning is integrated. **Do not deploy this feature for real client files.**
+- Open risks: no invitation delivery integration, MFA policy, malware scanner/CDR, rate limiting, independent penetration test, consent records, case-grant review, production object storage or identity lifecycle management.
