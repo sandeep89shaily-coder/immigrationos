@@ -74,3 +74,5 @@ jobs:
         run: DATABASE_URL="$RLS_APP_DATABASE_URL" python scripts/postgres_study_intake_smoke.py
       - name: Exercise prospect consultation CRM and unsigned-agreement gating under PostgreSQL RLS
         run: DATABASE_URL="$RLS_APP_DATABASE_URL" python scripts/postgres_crm_smoke.py
+      - name: Exercise signed RCIC service engagement and matter assignment under PostgreSQL RLS
+        run: DATABASE_URL="$RLS_APP_DATABASE_URL" python scripts/postgres_engagement_smoke.py
