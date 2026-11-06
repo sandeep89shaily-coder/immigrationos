@@ -33,8 +33,8 @@ services:
     networks: [scan_internal]
     volumes:
       - clamav_signatures:/var/lib/clamav
-    # Clamd's TCP socket is unauthenticated: intentionally NOT published to the host.
-    # Requires ~3-4 GB RAM; cold startup/signature updates may take several minutes.
+    # Clamd TCP port intentionally never published to the host.
+    # Cold startup/signatures may require several minutes and ~3-4 GB RAM.
   migrate:
     build: .
     command: ["alembic", "upgrade", "head"]
@@ -73,15 +73,7 @@ services:
     volumes:
       - doc_dev:/app/data
     depends_on:
-      clamav:
-    image: clamav/clamav:stable
-    profiles: [scanner]
-    networks: [scan_internal]
-    volumes:
-      - clamav_signatures:/var/lib/clamav
-    # Clamd's TCP socket is unauthenticated: intentionally NOT published to the host.
-    # Requires ~3-4 GB RAM; cold startup/signature updates may take several minutes.
-  migrate:
+      migrate:
         condition: service_completed_successfully
       keycloak:
         condition: service_started
