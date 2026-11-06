@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.access import OrgAccess, READ_ROLES, allow, get_org_access
-from app.db import get_db
+from app.db import get_db, set_db_context
 from app.ircc_registry import REGISTRY, ObservedForm, source_metadata
 from app.models import AuditEvent, Case, CaseDocument, CaseFact, CaseIssue, CaseTask
 from app.portal_models import PortalSubmission
@@ -218,4 +218,8 @@ def acknowledge_preflight(org_id: UUID, case_id: UUID, form_code: str,
         "schema": PREFLIGHT_SCHEMA_VERSION,
     })
     db.commit()
+    # PostgreSQL set_config(..., true) only applies to the previous transaction.
+    # A new SELECT after commit MUST restore the principal + tenant context,
+    # otherwise RLS will silently hide the just-inserted acknowledgement.
+    set_db_context(db, access.principal.sub, org_id)
     return _with_ack(db, org_id, case_id, result)
