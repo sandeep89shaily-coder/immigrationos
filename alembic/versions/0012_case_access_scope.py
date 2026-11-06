@@ -46,7 +46,7 @@ def upgrade():
     ) RETURNS boolean
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path = pg_catalog, public
-    AS $
+    AS $member_check$
         SELECT
             p_org::text = current_setting('app.tenant_id', true)
             AND EXISTS (
@@ -63,13 +63,13 @@ def upgrade():
                   AND target.is_active
                   AND target.role = ANY (p_roles)
             )
-    $""")
+    $member_check$""")
     op.execute("REVOKE ALL ON FUNCTION crm_active_member_in_roles(uuid,text,text[]) FROM PUBLIC")
-    op.execute("""DO $ BEGIN IF EXISTS(SELECT 1 FROM pg_roles
+    op.execute("""DO $grant_role$ BEGIN IF EXISTS(SELECT 1 FROM pg_roles
         WHERE rolname='immigrationos_app') THEN
         GRANT EXECUTE ON FUNCTION crm_active_member_in_roles(uuid,text,text[])
             TO immigrationos_app;
-        END IF; END $""")
+        END IF; END $grant_role$""")
     op.execute("ALTER TABLE case_access_grants ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE case_access_grants FORCE ROW LEVEL SECURITY")
     base = """(case_access_grants.org_id::text = current_setting('app.tenant_id', true)
