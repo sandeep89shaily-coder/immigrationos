@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.access import OrgAccess, READ_ROLES, allow, get_org_access
+from app.case_scope import MANAGERS, visible_case_ids
 from app.db import get_db
 from app.engagement_models import (EngagementScreen, MatterAssignment,
                                    ServiceAgreementDraft, ServiceSignedCopy)
@@ -476,9 +477,12 @@ def engaged_matters(org_id: UUID, client_id: UUID,
                     db: Session = Depends(get_db), access: OrgAccess = Depends(get_org_access)):
     allow(access, READ_ROLES)
     client_for(db, org_id, client_id)
-    rows = db.scalars(select(MatterAssignment).where(
-        MatterAssignment.org_id == org_id, MatterAssignment.client_id == client_id
-    ).order_by(MatterAssignment.created_at.desc()).limit(50)).all()
+    q = select(MatterAssignment).where(
+        MatterAssignment.org_id == org_id, MatterAssignment.client_id == client_id)
+    if access.role not in MANAGERS:
+        q = q.where(MatterAssignment.case_id.in_(
+            visible_case_ids(org_id, access.principal.sub, access.role)))
+    rows = db.scalars(q.order_by(MatterAssignment.created_at.desc()).limit(50)).all()
     return [{"id": str(x.id), "case_id": str(x.case_id), "draft_id": str(x.draft_id),
              "professional_sub": x.professional_sub, "created_at": x.created_at,
              "staff_assignment_only": True} for x in rows]
