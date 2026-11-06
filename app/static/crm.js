@@ -18,6 +18,7 @@ async function renderCRM(){
  let actions=btn('← Prospects','crm:back','smallbtn');
  if(['new','contacted'].includes(p.stage))actions+=' '+btn('Record activity','crm:activity','smallbtn');
  if(!consultations.some(c=>c.status==='scheduled')&&!['converted','closed'].includes(p.stage))actions+=' '+btn('Schedule consultation','crm:schedule','primary smallbtn');
+ if(!consultations.some(c=>c.status==='scheduled')&&!['converted','closed'].includes(p.stage))actions+=' '+btn('Close prospect','crm:close','smallbtn');
  const summary=panel('Prospect record',`<div class=panel-body>${keyValue('Name',p.first_name+' '+p.last_name)}${keyValue('Contact',p.email||p.phone)}${keyValue('Source',p.source)}${keyValue('Stage',p.stage)}${keyValue('Marketing/outreach consent',p.outreach_consent?'Recorded ('+(p.consent_source||'')+')':'Not recorded')}</div>`);
  const history=panel('Recorded interactions',`<div class=panel-body><div class=callout>These are internal records only. No email, SMS or WhatsApp is sent by this module.</div>${activities.length?activities.map(a=>`<div class=item-row><div class=bullet>≡</div><div><div class=item-title>${h(a.kind)} · ${d(a.created_at)}</div><div class=meta>${h(a.content)}</div></div></div>`).join(''):empty('No activity yet','Record an initial contact or note.')}</div>`);
  let appointment=empty('No consultation booked','Schedule a consultation before drafting its written agreement.');
@@ -92,6 +93,8 @@ async function crmAction(action){
  if(action==='crm:back'){S.prospectId=null;return render()}
  if(action==='crm:new')return crmNewProspect();
  if(action==='crm:activity')return crmActivity();
+ if(action==='crm:close')return modal('<h2>Close prospect</h2><p>Keep the historical contact record. This does not delete prospect information.</p><form><div class=form-field><label>Reason</label><textarea name=reason rows=3 required minlength=5 maxlength=500></textarea></div>'+actions('Close prospect')+'</form>',async f=>{await api(crmPath()+'/close',{method:'POST',body:values(f)})});
+
  if(action==='crm:schedule')return crmSchedule();
  if(action==='crm:agreement')return crmAgreement();
  if(action==='crm:upload')return crmUpload();
