@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.access import AUDIT_ROLES, READ_ROLES, WRITE_ROLES, OrgAccess, allow, get_org_access
+from app.case_scope import visible_case_filter
 from app.auth import Principal, get_principal
 from app.db import get_db, set_db_context
 from app.models import AuditEvent, Case, Client, Membership, Organization
@@ -111,13 +112,17 @@ def get_client(org_id: UUID, client_id: UUID, db: Session = Depends(get_db), acc
 @app.post("/api/v1/orgs/{org_id}/cases", response_model=CaseRead, status_code=201, tags=["cases"])
 def create_case(org_id: UUID, payload: CaseCreate, db: Session = Depends(get_db), access: OrgAccess = Depends(get_org_access)):
     allow(access, WRITE_ROLES)
+    if get_settings().environment == 'production':
+        # Legacy synthetic draft route cannot bypass reviewed service engagement.
+        raise HTTPException(status_code=409, detail='Open matters through signed engagement and professional assignment')
     client = db.scalar(select(Client.id).where(Client.org_id == org_id, Client.id == payload.client_id))
     if client is None:
         raise HTTPException(status_code=404, detail="Client not found in this organization")
     case = Case(org_id=org_id, **payload.model_dump())
     db.add(case)
     db.flush()
-    record_event(db, access, "case.created", "case", case.id, {"status": "draft"})
+    record_event(db, access, "case.created", "case", case.id,
+                 {"status": "draft", "legacy_synthetic_unengaged": True})
     db.commit()
     return case
 
@@ -125,7 +130,7 @@ def create_case(org_id: UUID, payload: CaseCreate, db: Session = Depends(get_db)
 @app.get("/api/v1/orgs/{org_id}/cases", response_model=list[CaseRead], tags=["cases"])
 def list_cases(org_id: UUID, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0, le=10000),
                db: Session = Depends(get_db), access: OrgAccess = Depends(get_org_access)):
-    return db.scalars(select(Case).where(Case.org_id == org_id)
+    return db.scalars(select(Case).where(visible_case_filter(org_id, access.principal.sub, access.role))
                       .order_by(Case.created_at, Case.id).offset(offset).limit(limit)).all()
 
 
@@ -187,6 +192,8 @@ from app.crm import router as crm_router
 app.include_router(crm_router)
 from app.crm_followups import router as crm_followups_router
 app.include_router(crm_followups_router)
+from app.case_staff import router as case_staff_router
+app.include_router(case_staff_router)
 from app.engagement import router as engagement_router
 app.include_router(engagement_router)
 from app.form_inspection_api import router as form_inspection_router
