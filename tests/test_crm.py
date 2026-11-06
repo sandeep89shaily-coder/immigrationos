@@ -243,3 +243,39 @@ def test_composite_db_constraints_block_cross_prospect_links(api):
         with pytest.raises(IntegrityError):
             db.commit()
         db.rollback()
+
+
+def test_download_of_signed_copy_requires_clean_scan_and_has_safe_headers(api, monkeypatch):
+    client, _, _ = api
+    org, lead = new_lead(api, "crm-download")
+    appt = booking(api, org, lead)
+    form = agreement(api, org, lead, appt)
+    url = proof_path(org, lead, appt, form["id"])
+    contents = fake_pdf(monkeypatch, scan="unavailable")
+    assert upload_proof(client, url, contents).status_code == 201
+    assert client.get(url + "/signed-copy").status_code == 423
+    crm.scan_bytes = lambda data: ScanVerdict(status="cleared")
+    assert client.post(url + "/scan").status_code == 200
+    downloaded = client.get(url + "/signed-copy")
+    assert downloaded.status_code == 200 and downloaded.content == contents
+    assert downloaded.headers["cache-control"] == "no-store"
+    assert downloaded.headers["x-content-type-options"] == "nosniff"
+
+
+def test_escaped_immutable_printable_draft_and_client_copy_gate(api):
+    client, _, _ = api
+    org, lead = new_lead(api, "crm-printable")
+    appt = booking(api, org, lead)
+    form = agreement(api, org, lead, appt)
+    url = proof_path(org, lead, appt, form["id"])
+    res = client.get(url + "/draft")
+    assert res.status_code == 200, res.text
+    assert "NOT SIGNED" in res.text
+    assert form["terms_sha256"] in res.text
+    assert "Content-Security-Policy" in res.headers
+    assert "Consultation agreement" in res.text
+    assert client.post(url + "/review", json={
+        "decision": "accept",
+        "reviewer_attests_signed_agreement_and_client_copy": True,
+        "review_note": "An unsigned draft cannot be treated as a signed agreement."
+    }).status_code == 409
