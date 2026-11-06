@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     experimental_ai_enabled: bool = False
     ai_api_key: str = ""
     ai_model: str = ""
+    clamav_enabled: bool = False
+    clamav_host: str = "127.0.0.1"
+    clamav_port: int = 3310
 
 
     @field_validator("cors_origins")
