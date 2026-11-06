@@ -8,7 +8,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -82,6 +82,13 @@ def _kind(kind: str):
     return ADAPTERS[kind]
 
 
+def _validated_details(validator, details):
+    try:
+        return validator.validate_python(details).model_dump(mode="json", exclude_none=True)
+    except ValidationError as exc:
+        raise HTTPException(422, "Invalid history fields, dates or values") from exc
+
+
 def _client(db, org_id, client_id):
     if db.scalar(select(Client.id).where(Client.org_id == org_id, Client.id == client_id)) is None:
         raise HTTPException(404, "Client not available")
@@ -113,7 +120,7 @@ def add_history(org_id: UUID, client_id: UUID, kind: str, payload: HistoryPayloa
     if payload.expected_version is not None:
         raise HTTPException(409, "New history items cannot have an existing version")
     _client(db, org_id, client_id)
-    normalized = validator.validate_python(payload.details).model_dump(mode="json", exclude_none=True)
+    normalized = _validated_details(validator, payload.details)
     item = ApplicantHistory(org_id=org_id, client_id=client_id, kind=kind, details=normalized,
                             updated_by_sub=access.principal.sub)
     db.add(item)
@@ -137,7 +144,7 @@ def update_history(org_id: UUID, client_id: UUID, kind: str, record_id: UUID,
         raise HTTPException(404, "History item not available")
     if payload.expected_version != item.version:
         raise HTTPException(409, "History item changed; reload before saving")
-    item.details = validator.validate_python(payload.details).model_dump(mode="json", exclude_none=True)
+    item.details = _validated_details(validator, payload.details)
     item.version += 1
     item.updated_by_sub = access.principal.sub
     record_event(db, access, "applicant.history_updated", "client", client_id,
