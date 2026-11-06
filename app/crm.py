@@ -640,7 +640,7 @@ def convert_prospect(org_id: UUID, prospect_id: UUID,
         Client.last_name == entry.last_name, Client.phone == entry.phone).limit(1))
     if existing is not None:
         raise HTTPException(409, "Possible duplicate client: manual reconciliation required")
-    client = Client(org_id=org_id, first_name=entry.first_name,
+    client = Client(org_id=org_id, created_by_sub=access.principal.sub, first_name=entry.first_name,
                     last_name=entry.last_name, email=entry.email, phone=entry.phone)
     db.add(client)
     db.flush()
