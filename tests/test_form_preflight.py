@@ -1,5 +1,6 @@
 """Threat-focused tests for the incomplete, human-reviewed IRCC preflight."""
 from dataclasses import replace
+import pytest
 from datetime import date
 from uuid import UUID, uuid4
 
@@ -7,6 +8,15 @@ from app.ircc_registry import REGISTRY
 from app.models import AuditEvent, CaseDocument, CaseFact, CaseIssue, Membership
 from app.portal_models import DocumentRequest, PortalSubmission
 from tests.test_ircc_registry import setup_case
+
+
+@pytest.fixture(autouse=True)
+def fixed_review_date(monkeypatch):
+    """Keep fixture results independent of calendar age; stale-source test changes source."""
+    import app.form_preflight as preflight
+    original = preflight.source_metadata
+    monkeypatch.setattr(preflight, "source_metadata", lambda source, today=None:
+                        original(source, today=today or date(2026, 11, 6)))
 
 
 def _url(org, case):
