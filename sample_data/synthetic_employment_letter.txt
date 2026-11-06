@@ -1,0 +1,13 @@
+FICTIONAL TEST RECORD — NOT A REAL PERSON OR EMPLOYER
+First Name: Avery
+Last Name: Example
+Date of Birth: 1999-04-12
+Citizenship: Fictionland
+Passport Number: DEMO000000
+Employer Name: Example Aerospace Corp
+Employment Start: 2022-01-01
+Employment End: 2024-03-31
+
+This sample is designed to test local extraction and human verification.
+A separate fictional client questionnaire may list Employment End: 2024-06-30
+so that the discrepancy detection workflow can be demonstrated.
