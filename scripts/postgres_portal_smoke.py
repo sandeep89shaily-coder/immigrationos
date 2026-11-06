@@ -3,6 +3,12 @@
 Synthetic data only; runs in CI after migration with DATABASE_URL=limited app role.
 """
 from uuid import uuid4
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from cryptography.fernet import Fernet
+from app.settings import get_settings
+import app.portal as portal
+from app.malware_scan import ScanVerdict
 from fastapi.testclient import TestClient
 from app.auth import Principal, get_principal
 from app.main import app
@@ -36,7 +42,7 @@ try:
             request_id=r.json()['id']
             r=api.post(f'/api/v1/orgs/{org}/cases/{case}/portal/invitations')
             assert r.status_code==201, r.text
-            case_ids.append((org,case,request_id,r.json()['invite_token']))
+            case_ids.append((org,case,request_id,r.json()['invite_token'],person['sub']))
         # A client principal may only accept the invitation bound to verified email.
         person.update(sub='portal-recipient-'+uuid4().hex,email='person0@example.test',verified=True)
         r=api.post('/api/v1/client/invitations/accept',json={'token':case_ids[1][3]})
@@ -50,6 +56,19 @@ try:
         assert r.status_code==200 and len(r.json())==1,r.text
         assert api.get('/api/v1/client/cases/'+case_ids[1][1]+'/requests').status_code==404
         assert api.get(f'/api/v1/orgs/{case_ids[0][0]}/clients').status_code==404
+        # Runtime PostgreSQL role may only change disposition columns via staff RLS.
+        with TemporaryDirectory() as documents:
+            get_settings().uploads_enabled = True
+            get_settings().document_encryption_key = Fernet.generate_key().decode()
+            get_settings().document_storage_root = documents
+            r=api.post(f'/api/v1/client/cases/{case_ids[0][1]}/requests/{case_ids[0][2]}/upload',files={
+                'file':('synthetic.txt',b'Fictional only\n','text/plain')})
+            assert r.status_code==201,r.text
+            submission=r.json()['id']
+            person.update(sub=case_ids[0][4], email=None, verified=False)
+            portal.scan_bytes=lambda _: ScanVerdict('cleared')
+            r=api.post(f'/api/v1/orgs/{case_ids[0][0]}/cases/{case_ids[0][1]}/portal/submissions/{submission}/scan')
+            assert r.status_code==200 and r.json()['scan_status']=='cleared',r.text
 finally:
     app.dependency_overrides.clear()
 print('PASS: PostgreSQL verified-email invitation, case-scoped grant and cross-firm denial')
