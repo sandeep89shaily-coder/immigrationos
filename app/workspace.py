@@ -287,8 +287,12 @@ def readiness(org_id: UUID, case_id: UUID, db: Session = Depends(get_db), access
         CaseTask.org_id == org_id, CaseTask.case_id == case_id, CaseTask.status == 'open')) or 0
     docs = db.scalar(select(func.count()).select_from(CaseDocument).where(
         CaseDocument.org_id == org_id, CaseDocument.case_id == case_id)) or 0
+    quarantined = db.scalar(select(func.count()).select_from(PortalSubmission).where(
+        PortalSubmission.org_id == org_id, PortalSubmission.case_id == case_id,
+        PortalSubmission.scan_status != 'cleared')) or 0
     reasons = []
     if not docs: reasons.append('No documents uploaded')
+    if quarantined: reasons.append(f'{quarantined} client uploads awaiting malware clearance')
     if pending: reasons.append(f'{pending} facts need professional review')
     if issues: reasons.append(f'{issues} open evidence conflicts')
     if tasks: reasons.append(f'{tasks} outstanding operational tasks')
