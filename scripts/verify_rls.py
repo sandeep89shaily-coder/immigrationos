@@ -80,7 +80,9 @@ with engine.connect() as conn:
         tenant_tables = ["clients", "cases", "audit_events", "case_documents", "case_facts",
                          "case_issues", "case_tasks", "fact_suggestions", "evidence_review_snapshots",
                          "crm_prospects", "crm_prospect_activities", "crm_consultations",
-                         "crm_consultation_agreements", "crm_consultation_signed_copies", "crm_followups"]
+                         "crm_consultation_agreements", "crm_consultation_signed_copies", "crm_followups",
+                         "engagement_screens", "service_agreement_drafts",
+                         "service_signed_copies", "matter_assignments"]
         policies = conn.execute(text("""SELECT relname, relrowsecurity, relforcerowsecurity
             FROM pg_class WHERE relname = ANY(:tables)"""), {"tables": tenant_tables}).all()
         assert len(policies) == len(tenant_tables), "RLS FAILED: missing tables"
@@ -115,6 +117,22 @@ with engine.connect() as conn:
             has_column_privilege(current_user, 'crm_followups', 'status', 'UPDATE')""")).one()
         assert crm_followup_privileges == (False, False, False, True), \
             "RLS FAILED: follow-up due dates or assignees can be altered"
+
+        engagement_privileges = conn.execute(text("""SELECT
+            has_table_privilege(current_user, 'engagement_screens', 'UPDATE'),
+            has_table_privilege(current_user, 'engagement_screens', 'DELETE'),
+            has_table_privilege(current_user, 'service_agreement_drafts', 'UPDATE'),
+            has_table_privilege(current_user, 'service_agreement_drafts', 'DELETE'),
+            has_table_privilege(current_user, 'matter_assignments', 'UPDATE'),
+            has_table_privilege(current_user, 'matter_assignments', 'DELETE'),
+            has_column_privilege(current_user, 'service_signed_copies', 'sha256', 'UPDATE'),
+            has_column_privilege(current_user, 'service_signed_copies', 'draft_id', 'UPDATE'),
+            has_column_privilege(current_user, 'service_signed_copies', 'review_status', 'UPDATE')
+        """)).one()
+        assert engagement_privileges == (
+            False, False, False, False, False, False, False, False, True
+        ), "RLS FAILED: signed agreement or immutable professional record could be overwritten"
+
 
 
 
