@@ -97,6 +97,18 @@ with engine.connect() as conn:
         assert snapshot_privileges == (True, True, False, False), \
             "RLS FAILED: review history must be append-only"
 
+        crm_privileges = conn.execute(text("""SELECT
+            has_table_privilege(current_user, 'crm_consultation_agreements', 'UPDATE'),
+            has_table_privilege(current_user, 'crm_consultation_agreements', 'DELETE'),
+            has_table_privilege(current_user, 'crm_prospect_activities', 'UPDATE'),
+            has_table_privilege(current_user, 'crm_prospect_activities', 'DELETE'),
+            has_column_privilege(current_user, 'crm_consultation_signed_copies', 'review_status', 'UPDATE'),
+            has_column_privilege(current_user, 'crm_consultation_signed_copies', 'sha256', 'UPDATE')
+        """)).one()
+        assert crm_privileges == (False, False, False, False, True, False), \
+            "RLS FAILED: CRM immutable terms/activity or signed-copy hash is mutable"
+
+
         # Positive control: a member can record a review for their own firm's case.
         context(conn, principal_a, tenant_a)
         conn.execute(text("""INSERT INTO evidence_review_snapshots (
