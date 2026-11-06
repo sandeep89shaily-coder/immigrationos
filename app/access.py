@@ -38,6 +38,14 @@ def get_org_access(org_id: UUID, request: Request, db: Session = Depends(get_db)
         except ValueError:
             raise HTTPException(status_code=404, detail='Case not available') from None
         require_case_permission(db, access, resolved_id, request.method)
+    client_id = request.path_params.get('client_id')
+    if client_id is not None:
+        from app.case_scope import require_client_permission
+        try:
+            resolved_client = UUID(str(client_id))
+        except ValueError:
+            raise HTTPException(status_code=404, detail='Client not available') from None
+        require_client_permission(db, access, resolved_client, request.url.path)
     return access
 
 
