@@ -83,14 +83,18 @@ def _snapshot(db: Session, case: Case, source: ObservedForm,
         blockers.append("Unreviewed factual claims remain")
     if any(f.review_status == "verified" and not f.reviewed_by_sub for f in facts):
         blockers.append("A verified fact has no recorded human reviewer")
+    if any(f.document_id is not None and f.document_id not in doc_by_id for f in facts):
+        blockers.append("A fact points to a document outside this matter")
+    if any(f.review_status == "verified" and f.document_id is None and
+           f.field_path in {path for _, path in source.preview_fields} for f in facts):
+        blockers.append("A verified mapped fact lacks a linked supporting document")
 
     eligible = {}
     for fact in facts:
         if fact.review_status != "verified" or not fact.reviewed_by_sub:
             continue
-        if fact.document_id and (
-            fact.document_id not in doc_by_id or fact.document_id in blocked_docs
-        ):
+        if fact.document_id is None or (fact.document_id not in doc_by_id or
+                                        fact.document_id in blocked_docs):
             continue
         eligible.setdefault(fact.field_path, []).append(fact)
 
