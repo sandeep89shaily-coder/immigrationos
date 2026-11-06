@@ -169,3 +169,52 @@ def test_new_conflict_screen_pauses_mutations_in_production(api, monkeypatch):
     assert client.get(root + "/tasks").status_code == 200
     assert client.post(root + "/tasks", json={
         "title": "Blocked due to stale conflict screening"}).status_code == 409
+
+
+def test_client_directory_and_service_terms_not_firm_wide(api):
+    client, who, factory = api
+    org = new_org(client, "client-privacy")
+    first = new_client(client, org)
+    with factory() as db:
+        db.add(Membership(org_id=UUID(org), subject="unrelated-consultant",
+                          role="consultant", is_active=True))
+        db.add(Membership(org_id=UUID(org), subject="viewer-member",
+                          role="viewer", is_active=True))
+        db.commit()
+    who["sub"] = "unrelated-consultant"
+    assert client.get(f"/api/v1/orgs/{org}/clients").json() == []
+    assert client.get(f"/api/v1/orgs/{org}/clients/{first}").status_code == 404
+    assert client.get(f"/api/v1/orgs/{org}/engagements/clients/{first}").status_code == 404
+    assert client.post(f"/api/v1/orgs/{org}/engagements/clients/{first}/screens",
+                       json={"client_identity_verified": True,
+                             "previous_rep_checked": True, "prior_rep": "none",
+                             "conflict_status": "none_identified",
+                             "details": "Unrelated professional must not screen this client.",
+                             "independently_reviewed_conflicts": True}).status_code == 404
+    own = new_client(client, org)
+    listing = client.get(f"/api/v1/orgs/{org}/clients").json()
+    assert [x["id"] for x in listing] == [own]
+    assert client.get(f"/api/v1/orgs/{org}/engagements/clients/{own}").status_code == 200
+    who["sub"] = "viewer-member"
+    assert client.get(f"/api/v1/orgs/{org}/clients").json() == []
+    assert client.get(f"/api/v1/orgs/{org}/clients/{own}").status_code == 404
+    who["sub"] = "test-user-a"
+    assert len(client.get(f"/api/v1/orgs/{org}/clients").json()) == 2
+
+
+def test_assistant_can_see_linked_client_but_not_confidential_service_terms(api, monkeypatch):
+    client, who, factory = api
+    org, c, case_id = signed_case(api, monkeypatch, "client-linked-assistant")
+    with factory() as db:
+        db.add(Membership(org_id=UUID(org), subject="linked-assistant",
+                          role="assistant", is_active=True))
+        db.commit()
+    granted = client.post(f"/api/v1/orgs/{org}/cases/{case_id}/staff/grants",
+                          json={"subject": "linked-assistant", "scope": "read"})
+    assert granted.status_code == 201, granted.text
+    who["sub"] = "linked-assistant"
+    assert [r["id"] for r in client.get(f"/api/v1/orgs/{org}/clients").json()] == [c]
+    assert client.get(f"/api/v1/orgs/{org}/clients/{c}").status_code == 200
+    assert client.get(f"/api/v1/orgs/{org}/engagements/clients/{c}").status_code == 404
+    assert client.get(f"/api/v1/orgs/{org}/engagements/clients/{c}/history").status_code == 404
+    assert client.get(f"/api/v1/orgs/{org}/engagements/cases/{case_id}").status_code == 200
