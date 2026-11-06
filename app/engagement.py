@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.access import OrgAccess, READ_ROLES, allow, get_org_access
-from app.case_scope import MANAGERS, visible_case_ids
+from app.case_scope import MANAGERS, active_staff_member, visible_case_ids
 from app.db import get_db
 from app.engagement_models import (EngagementScreen, MatterAssignment,
                                    ServiceAgreementDraft, ServiceSignedCopy)
@@ -444,12 +444,8 @@ def open_engaged_matter(org_id: UUID, client_id: UUID, payload: OpenMatterInput,
         raise HTTPException(409, "A current, cleared, reviewed signed service agreement is required")
     # Select only authenticated active staff with a professional role; the
     # CICC licence itself is NOT checked by this prototype.
-    member = db.scalar(select(Membership).where(
-        Membership.org_id == org_id,
-        Membership.subject == payload.professional_sub,
-        Membership.is_active.is_(True),
-        Membership.role.in_(["owner", "admin", "consultant"])))
-    if member is None:
+    if not active_staff_member(db, org_id, payload.professional_sub,
+                               ("owner", "admin", "consultant")):
         raise HTTPException(422, "Assigned professional must be an active firm owner/admin/consultant")
     case = Case(org_id=org_id, client_id=client_id, application_type=payload.application_type,
                 title=payload.title.strip(), status="draft")
@@ -457,16 +453,16 @@ def open_engaged_matter(org_id: UUID, client_id: UUID, payload: OpenMatterInput,
     db.flush()
     assignment = MatterAssignment(
         org_id=org_id, client_id=client_id, case_id=case.id, draft_id=d.id,
-        professional_sub=member.subject, assigned_by_sub=access.principal.sub)
+        professional_sub=payload.professional_sub, assigned_by_sub=access.principal.sub)
     db.add(assignment)
     db.flush()
     record_event(db, access, "engagement.matter_opened", "case", case.id,
-                 {"draft_id": str(d.id), "assigned_professional_sub": member.subject,
+                 {"draft_id": str(d.id), "assigned_professional_sub": payload.professional_sub,
                   "staff_attestation_only": True})
     db.commit()
     return {"case_id": str(case.id), "client_id": str(client_id),
             "assignment_id": str(assignment.id),
-            "professional_sub": member.subject, "agreement_version": d.version,
+            "professional_sub": payload.professional_sub, "agreement_version": d.version,
             "case_status": "draft",
             "regulated_authority_independently_verified": False,
             "legacy_draft_case_routes_remain_outside_this_gate": True}
