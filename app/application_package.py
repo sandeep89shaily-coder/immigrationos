@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.access import OrgAccess, READ_ROLES, allow, get_org_access
-from app.db import get_db
+from app.db import get_db, set_db_context
 from app.evidence_matrix import _matrix
 from app.form_workflow_profiles import SOURCE_URL as REPRESENTATIVE_SOURCE, VERSION as REPRESENTATIVE_REVISION
 from app.ircc_registry import REGISTRY, source_metadata
@@ -200,6 +200,9 @@ def create_package(org_id: UUID, case_id: UUID, payload: CreatePackage,
                   "representative_form_selected": pkg.include_representative_form,
                   "profile_version": PROFILE_VERSION})
     db.commit()
+    # PostgreSQL app.tenant_id is transaction-local; reset it for the SELECTs
+    # used by the response after committing the package creation transaction.
+    set_db_context(db, access.principal.sub, org_id)
     return _summary(db, pkg)
 
 
