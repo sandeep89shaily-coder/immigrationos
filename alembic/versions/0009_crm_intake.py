@@ -111,6 +111,7 @@ def upgrade():
         sa.Column("client_copy_provided_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("scan_status", sa.String(16), nullable=False),
         sa.Column("review_status", sa.String(16), nullable=False),
+        sa.Column("review_note", sa.String(800)),
         sa.Column("reviewed_by_sub", sa.String(255)),
         sa.Column("reviewed_at", sa.DateTime(timezone=True)),
         sa.Column("created_by_sub", sa.String(255), nullable=False),
@@ -163,7 +164,7 @@ def upgrade():
         GRANT SELECT, INSERT, UPDATE ON crm_consultations TO immigrationos_app;
         GRANT SELECT, INSERT ON crm_consultation_agreements TO immigrationos_app;
         GRANT SELECT, INSERT ON crm_consultation_signed_copies TO immigrationos_app;
-        GRANT UPDATE (scan_status, review_status, reviewed_by_sub, reviewed_at)
+        GRANT UPDATE (scan_status, review_status, reviewed_by_sub, reviewed_at, review_note)
             ON crm_consultation_signed_copies TO immigrationos_app;
         END IF; END $$""")
 
