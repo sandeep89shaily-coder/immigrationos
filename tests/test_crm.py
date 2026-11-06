@@ -279,3 +279,28 @@ def test_escaped_immutable_printable_draft_and_client_copy_gate(api):
         "reviewer_attests_signed_agreement_and_client_copy": True,
         "review_note": "An unsigned draft cannot be treated as a signed agreement."
     }).status_code == 409
+
+
+def test_cancelled_appointment_can_be_rescheduled_and_assistants_cannot_signoff(api):
+    client, who, factory = api
+    org, lead = new_lead(api, "crm-cancel")
+    old = booking(api, org, lead)
+    path = f"/api/v1/orgs/{org}/crm/prospects/{lead}/consultations"
+    cancel = client.post(path + f"/{old}/cancel")
+    assert cancel.status_code == 200
+    assert client.get(f"/api/v1/orgs/{org}/crm/prospects/{lead}").json()["stage"] == "contacted"
+    assert client.post(path + f"/{old}/complete").status_code == 409
+    assert booking(api, org, lead) != old
+    who["sub"] = "assistant-actor"
+    with factory() as db:
+        db.add(Membership(org_id=UUID(org), subject="assistant-actor",
+                          role="assistant", is_active=True))
+        db.commit()
+    assert client.post(path, json={
+        "starts_at": (datetime.now(timezone.utc)+timedelta(days=2)).isoformat(),
+        "ends_at": (datetime.now(timezone.utc)+timedelta(days=2, minutes=30)).isoformat(),
+    }).status_code == 403
+    assert client.post(f"/api/v1/orgs/{org}/crm/prospects/{lead}/convert").status_code == 403
+    assert client.post(f"/api/v1/orgs/{org}/crm/prospects/{lead}/activities",json={
+        "kind": "note", "content": "Synthetic assistant activity recorded only."
+    }).status_code == 201
