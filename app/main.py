@@ -181,6 +181,8 @@ app.include_router(portal_router)
 app.include_router(portal_staff_router)
 app.include_router(ircc_registry_router)
 app.include_router(form_preflight_router)
+from app.form_coverage import router as form_coverage_router
+app.include_router(form_coverage_router)
 app.include_router(evidence_router)
 app.include_router(study_intake_client_router)
 app.include_router(study_intake_staff_router)
