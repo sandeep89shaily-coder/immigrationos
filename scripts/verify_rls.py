@@ -78,7 +78,9 @@ with engine.connect() as conn:
                 raise AssertionError("RLS FAILED: non-member could insert client into another firm")
 
         tenant_tables = ["clients", "cases", "audit_events", "case_documents", "case_facts",
-                         "case_issues", "case_tasks", "fact_suggestions", "evidence_review_snapshots"]
+                         "case_issues", "case_tasks", "fact_suggestions", "evidence_review_snapshots",
+                         "crm_prospects", "crm_prospect_activities", "crm_consultations",
+                         "crm_consultation_agreements", "crm_consultation_signed_copies"]
         policies = conn.execute(text("""SELECT relname, relrowsecurity, relforcerowsecurity
             FROM pg_class WHERE relname = ANY(:tables)"""), {"tables": tenant_tables}).all()
         assert len(policies) == len(tenant_tables), "RLS FAILED: missing tables"
