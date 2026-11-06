@@ -1,7 +1,7 @@
 /* ImmigrationOS consultant workspace. No frontend build chain, no stored access token.
    For fictitious development data ONLY. Auth: OIDC authorization code with PKCE. */
 'use strict';
-const S={config:null,token:null,refresh:null,expires:0,orgs:[],org:null,view:'dashboard',caseId:null,tab:'overview',filingContext:null,data:{}};
+const S={config:null,token:null,refresh:null,expires:0,orgs:[],org:null,view:'dashboard',caseId:null,prospectId:null,tab:'overview',filingContext:null,data:{}};
 const $=id=>document.getElementById(id);
 const h=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const d=x=>x?new Date(x).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}):'—';
@@ -53,16 +53,16 @@ async function init(){try{
  $('loginBtn').addEventListener('click',login);
  $('signoutBtn').addEventListener('click',logout);
  $('refreshBtn').addEventListener('click',()=>render().catch(fail));
- $('firmSelect').addEventListener('change',async e=>{S.org=e.target.value||null;sessionStorage.setItem('ios_org',S.org||'');S.caseId=null;await render()});
+ $('firmSelect').addEventListener('change',async e=>{S.org=e.target.value||null;sessionStorage.setItem('ios_org',S.org||'');S.caseId=null;S.prospectId=null;await render()});
  $('closeModal').addEventListener('click',closeModal);$('modalBackdrop').addEventListener('click',e=>{if(e.target.id==='modalBackdrop')closeModal()});
- document.querySelectorAll('.nav-item').forEach(x=>x.addEventListener('click',()=>{S.view=x.dataset.view;S.caseId=null;render().catch(fail)}));
+ document.querySelectorAll('.nav-item').forEach(x=>x.addEventListener('click',()=>{S.view=x.dataset.view;S.caseId=null;S.prospectId=null;render().catch(fail)}));
  document.addEventListener('click',eventHandler);
  if(!await oauthCallback()){showLogin();return}
  showShell();await firms();await render();
  }catch(e){showLogin(e.message||String(e))}}
 function fail(e){console.error(e);toast(e.message||'Unexpected error');}
 function nav(){document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.view===S.view));
- const labels={dashboard:'Practice overview',cases:'Matters',clients:'Client directory',review:'Evidence review queue',tasks:'Task management',audit:'Audit history'};
+ const labels={dashboard:'Practice overview',crm:'Prospects',cases:'Matters',clients:'Client directory',review:'Evidence review queue',tasks:'Task management',audit:'Audit history'};
  $('breadcrumb').textContent=S.caseId?'Case workspace':(labels[S.view]||'ImmigrationOS');}
 function page(title,desc,tools=''){return `<div class="page-head"><div><div class="eyebrow">IMMIGRATIONOS / ${h(S.view).toUpperCase()}</div><h1>${h(title)}</h1><p>${h(desc)}</p></div><div>${tools}</div></div>`}
 function panel(title,inner,tools=''){return `<section class="panel"><div class="panel-head"><h2>${h(title)}</h2>${tools}</div>${inner}</section>`}
@@ -71,6 +71,7 @@ async function render(){nav();if(!S.org){$('mainContent').innerHTML=`${page('Set
  $('mainContent').innerHTML='<div class="loading">Loading workspace…</div>';
  try{if(S.caseId)return await renderCase();
  if(S.view==='dashboard')await renderDashboard();
+ if(S.view==='crm')await renderCRM();
  if(S.view==='cases')await renderCases();
  if(S.view==='clients')await renderClients();
  if(S.view==='review')await renderReviews();
@@ -226,8 +227,9 @@ function resolveIssue(id){modal(`<h2>Resolve evidence issue</h2><p>Record a prof
 function changeStatus(){const caseObj=S.data.cases.find(x=>x.id===S.caseId);const map={draft:['intake','closed'],intake:['review','on_hold','closed'],review:['intake','on_hold','closed'],on_hold:['intake','review','closed'],closed:[]};const options=map[caseObj.status]||[];
  modal(`<h2>Update case status</h2><p>Status changes are recorded in the audit trail. This does not submit anything to IRCC.</p><form>${selectField('status','Next status',options.map(v=>[v,v.replaceAll('_',' ')]))}${fld('reason','Reason (required)','text','required minlength="10" maxlength="250"')}${actions('Update status')}</form>`,async f=>{await api(q()+`/cases/${S.caseId}/status`,{method:'PATCH',body:values(f)})})}
 async function downloadDoc(id){const doc=S.data.docs.find(x=>x.id===id);const res=await api(q()+`/cases/${S.caseId}/documents/${id}/download`,{raw:true});const blob=await res.blob();const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=doc?.filename||'document';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000)}
-async function eventHandler(e){const tab=e.target.closest('[data-tab]');if(tab){S.tab=tab.dataset.tab;return render().catch(fail)}const row=e.target.closest('[data-case]');if(row){S.caseId=row.dataset.case;S.view='cases';S.tab='overview';S.filingContext=null;return render().catch(fail)}const act=e.target.closest('[data-action]');if(!act)return;const action=act.dataset.action;
+async function eventHandler(e){const tab=e.target.closest('[data-tab]');if(tab){S.tab=tab.dataset.tab;return render().catch(fail)}const prow=e.target.closest('[data-prospect]');if(prow){S.prospectId=prow.dataset.prospect;S.caseId=null;S.view='crm';return render().catch(fail)}const row=e.target.closest('[data-case]');if(row){S.caseId=row.dataset.case;S.view='cases';S.tab='overview';S.filingContext=null;S.prospectId=null;return render().catch(fail)}const act=e.target.closest('[data-action]');if(!act)return;const action=act.dataset.action;
  try{
+ if(action.startsWith('crm:'))return await crmAction(action);
  if(action.startsWith('repOperation:')){S.repOperation=action.split(':')[1];return await render()}
 if(action.startsWith('repChannel:')){S.repChannel=action.split(':')[1];return await render()}
 if(action==='inspectRepresentativePDF'){
