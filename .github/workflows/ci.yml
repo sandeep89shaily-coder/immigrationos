@@ -55,3 +55,4 @@ jobs:
           PY
       - run: alembic upgrade head
       - run: python scripts/verify_rls.py
+      - run: DATABASE_URL="$RLS_APP_DATABASE_URL" python scripts/postgres_api_smoke.py
