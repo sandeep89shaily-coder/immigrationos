@@ -1,0 +1,104 @@
+'use strict';
+/* First usable application worklist: study permits only; NO IRCC PDF autofill. */
+const pkgRoot=()=>q()+'/cases/'+encodeURIComponent(S.caseId)+'/package';
+
+async function renderPackage(){
+ const pkg=await api(pkgRoot());
+ S.activePackage=pkg;
+ if(!pkg.initialized){
+  let intro='<div class="panel-body"><p>Start an application package by choosing the actual filing location. This selects the study permit form and connects the existing document checklist.</p><div class="warning-text">IMM 1294 and IMM 5709 are NOT auto-filled. Do not file an internal worksheet as an official IRCC document.</div>';
+  intro+=btn('Start application package','pkg:create','primary')+'</div>';
+  return panel('Application forms and required documents',intro);
+ }
+ let body='<div class="panel-body"><div class="callout"><strong>Filing route: '+h(pkg.filing_context.replaceAll('_',' '))+'</strong> · '+h(pkg.profile_version)+'</div>';
+ body+='<div class="warning-text">This is the actual file-preparation checklist; it is not a completed IRCC application. A reviewed PDF copy is NOT proof of official form validation. Government submission is disabled.</div>';
+ if(pkg.sources_need_recheck)body+='<p class="warning-text">One or more official sources need rechecking before continuing.</p>';
+ body+='<h3>Forms to prepare and review</h3>';
+ for(const form of pkg.forms){
+   const copy=form.latest_copy;
+   body+='<div class="item-row"><div class="bullet">▤</div><div style="flex:1;min-width:0">'+
+     '<div class="item-title">'+h(form.code)+' — '+h(form.title)+'</div>'+
+     '<div class="meta">Official revision: '+h(form.source_revision)+' · '+h(form.status.replaceAll('_',' '))+'</div>'+
+     '<div class="meta"><a href="'+h(form.source_url)+'" rel="noopener noreferrer" target="_blank">IRCC instructions ↗</a> · '+form.copy_count+' retained copy/copies</div>'+
+     (copy?'<div class="meta">Latest linked document: '+h(copy.document_id.slice(0,8))+' · Scan '+h(copy.scan_status)+' · Review '+h(copy.review_status)+'</div>':'')+
+     '</div><div class="push">'+
+     btn('Attach PDF copy','pkg:link:'+form.code,'smallbtn')+
+     (copy&&copy.scan_status==='quarantined'?' '+btn('Rescan','pkg:scan:'+copy.id,'smallbtn'):'')+
+     (copy&&copy.scan_status==='cleared'&&copy.review_status==='pending'?
+       ' '+btn('Review copy','pkg:review:'+copy.id,'primary smallbtn'):'')+
+     '</div></div>';
+ }
+ body+='<h3>Supporting evidence worklist</h3>';
+ body+='<div class="callout">These are the existing, non-exhaustive document requirements for this study-permit route. Conditional items still require an RCIC applicability decision.</div>';
+ for(const req of pkg.document_requirements){
+   body+='<div class="item-row"><div style="flex:1"><div class="item-title">'+h(req.title)+'</div>'+
+     '<div class="meta">'+h(req.guidance)+'</div>'+
+     '<div class="meta"><a href="'+h(req.source_url)+'" target="_blank" rel="noopener noreferrer">Official IRCC guidance ↗</a></div></div>'+
+     '<div class="push">'+chip(req.status)+'</div></div>';
+ }
+ body+='<p class="meta">Open evidence issues: '+pkg.open_evidence_issue_count+'</p>';
+ body+='<div class="callout">Forms are staff-reviewed copies only: '+(pkg.all_selected_form_copies_staff_reviewed?'all selected copies reviewed.':'more form copies/reviews are needed.')+
+   ' Official autofill, Adobe/barcode validity and submission are still NOT implemented.</div>';
+ body+='</div>';
+ return panel('Application package · '+pkg.filing_context.replaceAll('_',' '),body);
+}
+
+function pkgCreate(){
+ modal('<h2>Start application package</h2><p>Study permits only. Confirm the route with current IRCC guidance. This filing context will be locked until a versioned change workflow is added.</p><form>'+
+   selectField('filing_context','Filing route',[
+     ['outside_canada','Outside Canada — IMM 1294'],
+     ['inside_canada','Inside Canada — IMM 5709']])+
+   '<label><input type="checkbox" name="representative" checked> Include IMM 5476 representative form in this case package</label>'+
+   '<p class="meta">A representative form may apply differently by case and submission channel; verify with an RCIC.</p>'+
+   actions('Create worklist')+'</form>',async f=>{
+     const v=values(f);
+     const include=f.querySelector('[name=representative]').checked;
+     await api(pkgRoot(),{method:'POST',body:{
+       filing_context:v.filing_context,include_representative_form:include}});
+ });
+}
+
+function pkgLink(code){
+ const pdfs=(S.data.docs||[]).filter(d=>d.mime_type==='application/pdf'&&d.filename.toLowerCase().endsWith('.pdf'));
+ if(!pdfs.length){
+  toast('Upload a fictional PDF from the Documents tab first.');
+  S.tab='documents';return render();
+ }
+ const options=pdfs.map(d=>[d.id,d.filename+' ('+d.document_type+')']);
+ modal('<h2>Attach a manually completed '+h(code)+' PDF copy</h2>'+
+   '<p>Only select a PDF already uploaded to this same case. The system will scan it and create an immutable evidence record; it does NOT autofill or officially validate the PDF.</p><form>'+
+   selectField('document_id','Existing PDF document',options)+
+   actions('Link and scan document')+'</form>',async f=>{
+     await api(pkgRoot()+'/forms/'+encodeURIComponent(code)+'/copies',{
+       method:'POST',body:values(f)});
+ });
+}
+
+function pkgReview(copyId){
+ modal('<h2>Professional review of manual IRCC PDF copy</h2>'+
+   '<p>First download the file from the Documents tab and personally verify the correct official revision, fields, signatures and any required Adobe/barcode validation. A staff attestation does not guarantee IRCC acceptance.</p><form>'+
+   selectField('decision','Decision',[
+     ['accept','Record as staff-reviewed copy'],['reject','Reject this document copy']])+
+   '<div class="form-field"><label>Review findings</label><textarea rows="4" name="note" required minlength="25" maxlength="900"></textarea></div>'+
+   '<label><input type="checkbox" name="source_checked" required> I checked the latest official IRCC source and applicable instructions.</label>'+
+   '<label><input type="checkbox" name="pdf_checked" required> I inspected the PDF in the appropriate reader and reviewed its fields and signature requirements.</label>'+
+   actions('Record human review')+'</form>',async f=>{
+     const v=values(f);
+     await api(pkgRoot()+'/copies/'+encodeURIComponent(copyId)+'/review',{
+       method:'POST',body:{
+         decision:v.decision,note:v.note,
+         current_ircc_source_checked:f.querySelector('[name=source_checked]').checked,
+         reviewed_pdf_in_appropriate_software:f.querySelector('[name=pdf_checked]').checked}});
+ });
+}
+
+async function pkgAction(action){
+ if(action==='pkg:create')return pkgCreate();
+ const [,cmd,id]=action.split(':');
+ if(cmd==='link')return pkgLink(id);
+ if(cmd==='review')return pkgReview(id);
+ if(cmd==='scan'){
+   const r=await api(pkgRoot()+'/copies/'+encodeURIComponent(id)+'/scan',{method:'POST'});
+   await render();return toast('Malware scan status: '+r.scan_status);
+ }
+}
