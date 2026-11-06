@@ -27,6 +27,14 @@ services:
       - ./infra/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
     ports:
       - "127.0.0.1:8080:8080"
+  clamav:
+    image: clamav/clamav:stable
+    profiles: [scanner]
+    networks: [scan_internal]
+    volumes:
+      - clamav_signatures:/var/lib/clamav
+    # Clamd's TCP socket is unauthenticated: intentionally NOT published to the host.
+    # Requires ~3-4 GB RAM; cold startup/signature updates may take several minutes.
   migrate:
     build: .
     command: ["alembic", "upgrade", "head"]
@@ -52,19 +60,35 @@ services:
       CORS_ORIGINS: http://localhost:3000
       UPLOADS_ENABLED: "true"
       # External AI is opt-in and only for fictional data in development.
+      CLAMAV_ENABLED: ${CLAMAV_ENABLED:-false}
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
       EXPERIMENTAL_AI_ENABLED: ${EXPERIMENTAL_AI_ENABLED:-false}
       AI_MODEL: ${AI_MODEL:-}
       AI_API_KEY: ${AI_API_KEY:-}
       DOCUMENT_STORAGE_ROOT: /app/data/documents
       # DEV ONLY shared test key; never deploy with this value or real client files.
       DOCUMENT_ENCRYPTION_KEY: "l8OE70c8L4TkD6t6iIDy-V1_EKq_aWpGunc_XfdGZeU="
+    networks: [default, scan_internal]
     volumes:
       - doc_dev:/app/data
     depends_on:
-      migrate:
+      clamav:
+    image: clamav/clamav:stable
+    profiles: [scanner]
+    networks: [scan_internal]
+    volumes:
+      - clamav_signatures:/var/lib/clamav
+    # Clamd's TCP socket is unauthenticated: intentionally NOT published to the host.
+    # Requires ~3-4 GB RAM; cold startup/signature updates may take several minutes.
+  migrate:
         condition: service_completed_successfully
       keycloak:
         condition: service_started
+networks:
+  scan_internal:
+    internal: true
 volumes:
   pg_dev:
   doc_dev:
+  clamav_signatures:
