@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.access import OrgAccess, allow, get_org_access
-from app.case_scope import MANAGERS, current_signed_engagement
+from app.case_scope import MANAGERS, active_staff_member, current_signed_engagement
 from app.case_scope_models import CaseAccessGrant
 from app.db import get_db
 from app.engagement_models import MatterAssignment
@@ -68,13 +68,7 @@ def grant_assistant(org_id: UUID, case_id: UUID, payload: GrantInput,
         raise HTTPException(409, "Cannot grant access to closed cases")
     if not current_signed_engagement(db, case):
         raise HTTPException(409, "Case needs current reviewed service agreement before staff assignment")
-    target = db.scalar(select(Membership).where(
-        Membership.org_id == org_id,
-        Membership.subject == payload.subject,
-        Membership.is_active.is_(True),
-        Membership.role == "assistant",
-    ))
-    if target is None:
+    if not active_staff_member(db, org_id, payload.subject, ("assistant",)):
         raise HTTPException(422, "Assignee must be an active assistant in this firm")
     existing = db.scalar(select(CaseAccessGrant.id).where(
         CaseAccessGrant.org_id == org_id, CaseAccessGrant.case_id == case_id,
@@ -83,7 +77,7 @@ def grant_assistant(org_id: UUID, case_id: UUID, payload: GrantInput,
     ))
     if existing is not None:
         raise HTTPException(409, "Assistant already has active case access")
-    grant = CaseAccessGrant(org_id=org_id, case_id=case_id, subject=target.subject,
+    grant = CaseAccessGrant(org_id=org_id, case_id=case_id, subject=payload.subject,
                             scope=payload.scope, granted_by_sub=access.principal.sub)
     try:
         db.add(grant)
