@@ -218,3 +218,21 @@ def test_assistant_can_see_linked_client_but_not_confidential_service_terms(api,
     assert client.get(f"/api/v1/orgs/{org}/engagements/clients/{c}").status_code == 404
     assert client.get(f"/api/v1/orgs/{org}/engagements/clients/{c}/history").status_code == 404
     assert client.get(f"/api/v1/orgs/{org}/engagements/cases/{case_id}").status_code == 200
+
+
+def test_all_firm_scoped_case_routes_share_authorization_dependency():
+    """Future case API additions must not accidentally bypass the case guard."""
+    from fastapi.routing import APIRoute
+    from app.main import app
+    from app.access import get_org_access
+
+    checked = []
+    for route in app.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        if not route.path.startswith("/api/v1/orgs/{org_id}") or "{case_id}" not in route.path:
+            continue
+        dependencies = {dependency.call for dependency in route.dependant.dependencies}
+        assert get_org_access in dependencies, "Unprotected case route: " + route.path
+        checked.append(route.path)
+    assert len(checked) >= 25
