@@ -1,7 +1,7 @@
 /* ImmigrationOS consultant workspace. No frontend build chain, no stored access token.
    For fictitious development data ONLY. Auth: OIDC authorization code with PKCE. */
 'use strict';
-const S={config:null,token:null,refresh:null,expires:0,orgs:[],org:null,view:'dashboard',caseId:null,tab:'overview',data:{}};
+const S={config:null,token:null,refresh:null,expires:0,orgs:[],org:null,view:'dashboard',caseId:null,tab:'overview',filingContext:null,data:{}};
 const $=id=>document.getElementById(id);
 const h=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const d=x=>x?new Date(x).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}):'—';
@@ -104,11 +104,23 @@ async function renderCase(){const [cases,clients,tasks,issues,facts,docs,readine
  const c=cases.find(c=>c.id===S.caseId);if(!c){S.caseId=null;return render()};const client=clients.find(x=>x.id===c.client_id);
  const worksheet=await api(q()+`/cases/${S.caseId}/worksheets/${c.application_type==='work_permit'?'work_permit_demo':'study_permit_demo'}`);
  S.data={cases,clients,tasks,issues,facts,docs,readiness,suggestions,worksheet};
- const tabs=['overview','evidence','documents','suggestions','worksheet','tasks','issues','portal'];
+ const tabs=['overview','evidence','planning','documents','suggestions','worksheet','tasks','issues','portal'];
  let content='';
  if(S.tab==='overview') content=`${gateWidget(readiness)}<div class="two-col">${panel('Matter details',`<div class="panel-body">${keyValue('Application type',c.application_type.replaceAll('_',' '))}${keyValue('Client',client?client.first_name+' '+client.last_name:'Unknown')}${keyValue('Opened',d(c.created_at))}${keyValue('Status',c.status)}</div>`)}${panel('Evidence summary',`<div class="panel-body">${keyValue('Verified facts',String(readiness.verified_facts))}${keyValue('Pending verification',String(readiness.pending_facts))}${keyValue('Open exceptions',String(readiness.open_issues))}${keyValue('Documents uploaded',String(readiness.documents))}</div>`)}</div>`;
  if(S.tab==='evidence')content=panel('Case facts and human verification',`<div class="panel-body">${facts.length?facts.map(factItem).join(''):empty('No evidence facts','Add a manually documented fact to begin the evidence record.')}</div>`,btn('+ Add fact','newFact','primary smallbtn'));
- if(S.tab==='documents')content=panel('Encrypted development documents',`<div class="panel-body"><div class="warning-text">Development only — synthetic documents. Production uploads are disabled until malware scanning and privacy approval.</div>${docs.length?docs.map(docItem).join(''):empty('No documents uploaded','Upload a synthetic test document to test the secure storage workflow.')}</div>`,btn('+ Upload','newDocument','primary smallbtn'));
+ if(S.tab==='planning'){
+ let html='<div class=callout>Select the filing context. This operational checklist is non-exhaustive and always requires RCIC review.</div><p>'+btn('Outside Canada','filingContext:outside_canada','smallbtn')+' '+btn('Inside Canada','filingContext:inside_canada','smallbtn')+'</p>';
+ let actions='';
+ if(S.filingContext){
+  const matrix=await api(q()+`/cases/${S.caseId}/evidence/matrix?filing_context=${encodeURIComponent(S.filingContext)}`);
+  html+=`<p class=meta>Filing context: ${h(matrix.filing_context)} · Open evidence issues: ${matrix.open_evidence_issue_count}</p><div class=warning-text>${h(matrix.warning)}</div>`;
+  if(matrix.source_recheck_required)html+='<div class=warning-text>Official sources require rechecking before use.</div>';
+  html+=matrix.requirements.map(r=>`<div class=item-row><div class=bullet>▤</div><div style='flex:1'><div class=item-title>${h(r.title)}</div><div class=meta>${h(r.guidance)}</div><div class=meta><a href='${h(r.source_url)}' target='_blank' rel='noopener noreferrer'>Official IRCC source ↗</a>${r.requires_professional_applicability_review?' · Conditional applicability requires RCIC assessment':''}</div></div><div class=push>${chip(r.status)}</div></div>`).join('');
+  actions=btn('Create draft document requests','requestEvidence','primary smallbtn');
+ }else html+=empty('Select filing context','Choose inside or outside Canada to view case evidence coverage.');
+ content=panel('RCIC study-permit evidence planning',`<div class=panel-body>${html}</div>`,actions);
+}
+if(S.tab==='documents')content=panel('Encrypted development documents',`<div class="panel-body"><div class="warning-text">Development only — synthetic documents. Production uploads are disabled until malware scanning and privacy approval.</div>${docs.length?docs.map(docItem).join(''):empty('No documents uploaded','Upload a synthetic test document to test the secure storage workflow.')}</div>`,btn('+ Upload','newDocument','primary smallbtn'));
  if(S.tab==='suggestions')content=panel('Document extraction proposals',`<div class="panel-body"><div class="callout">Proposals come from a deterministic labelled-field parser, not an AI model. Every proposal needs human acceptance, then separate fact verification.</div>${suggestions.length?suggestions.map(s=>`<div class="item-row"><div class="bullet">◇</div><div style="flex:1"><div class="meta">${h(s.field_path)} · Page ${s.source_page} · ${h(s.extraction_method)}</div><div class="item-title">${h(s.value)}</div><div class="evidence-preview">${h(s.source_excerpt)}</div></div><div class="push">${chip(s.status)} ${s.status==='proposed'?`<div style="margin-top:8px">${btn('Accept','acceptSuggestion:'+s.id,'smallbtn')} ${btn('Dismiss','dismissSuggestion:'+s.id,'smallbtn')}</div>`:''}</div></div>`).join(''):empty('No extraction suggestions','Upload a synthetic labelled PDF/text document and select Extract on the Documents tab.')}</div>`);
  if(S.tab==='worksheet')content=panel('Internal preparation worksheet',`<div class="panel-body"><div class="warning-text">This is an INTERNAL DEMONSTRATION worksheet — not an official IRCC form and not an eligibility decision.</div>${gateWidget(readiness)}<div class="callout">${h(worksheet.title)} · ${h(worksheet.template_version)} · ${h(worksheet.status.replaceAll('_',' '))}</div>${table(['Field','Mapped verified value','Status'],worksheet.fields.map(f=>`<tr><td><strong>${h(f.label)}</strong><div class="meta">${h(f.field_path)}</div></td><td>${h(f.value||'—')}</td><td>${chip(f.status)}</td></tr>`))}</div>`);
  if(S.tab==='portal'){
@@ -143,9 +155,16 @@ function resolveIssue(id){modal(`<h2>Resolve evidence issue</h2><p>Record a prof
 function changeStatus(){const caseObj=S.data.cases.find(x=>x.id===S.caseId);const map={draft:['intake','closed'],intake:['review','on_hold','closed'],review:['intake','on_hold','closed'],on_hold:['intake','review','closed'],closed:[]};const options=map[caseObj.status]||[];
  modal(`<h2>Update case status</h2><p>Status changes are recorded in the audit trail. This does not submit anything to IRCC.</p><form>${selectField('status','Next status',options.map(v=>[v,v.replaceAll('_',' ')]))}${fld('reason','Reason (required)','text','required minlength="10" maxlength="250"')}${actions('Update status')}</form>`,async f=>{await api(q()+`/cases/${S.caseId}/status`,{method:'PATCH',body:values(f)})})}
 async function downloadDoc(id){const doc=S.data.docs.find(x=>x.id===id);const res=await api(q()+`/cases/${S.caseId}/documents/${id}/download`,{raw:true});const blob=await res.blob();const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=doc?.filename||'document';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000)}
-async function eventHandler(e){const tab=e.target.closest('[data-tab]');if(tab){S.tab=tab.dataset.tab;return render().catch(fail)}const row=e.target.closest('[data-case]');if(row){S.caseId=row.dataset.case;S.view='cases';S.tab='overview';return render().catch(fail)}const act=e.target.closest('[data-action]');if(!act)return;const action=act.dataset.action;
+async function eventHandler(e){const tab=e.target.closest('[data-tab]');if(tab){S.tab=tab.dataset.tab;return render().catch(fail)}const row=e.target.closest('[data-case]');if(row){S.caseId=row.dataset.case;S.view='cases';S.tab='overview';S.filingContext=null;return render().catch(fail)}const act=e.target.closest('[data-action]');if(!act)return;const action=act.dataset.action;
  try{
- if(action==='seedDemo'){if(!confirm('Create fictional demonstration clients, cases and evidence?'))return;await api(q()+'/demo-seed',{method:'POST'});await render();return toast('Sample cases created')}
+ if(action.startsWith('filingContext:')){S.filingContext=action.split(':')[1];return await render()}
+if(action==='requestEvidence'){
+ if(!S.filingContext)return toast('Select filing context first');
+ if(!confirm('Create draft document requests? No client message is sent. Review requests before sharing.'))return;
+ const result=await api(q()+`/cases/${S.caseId}/evidence/request-missing`,{method:'POST',body:{filing_context:S.filingContext}});
+ await render();return toast(`${result.created.length} draft document requests created`);
+}
+if(action==='seedDemo'){if(!confirm('Create fictional demonstration clients, cases and evidence?'))return;await api(q()+'/demo-seed',{method:'POST'});await render();return toast('Sample cases created')}
  if(action==='newPortalInvite')return await newPortalInvite();if(action==='newPortalRequest')return newPortalRequest();if(action==='copyPortalToken'){if(S.inviteToken)await navigator.clipboard.writeText(S.inviteToken);return toast('Token copied to clipboard')}if(action==='newOrg')return newOrg();if(action==='newClient')return newClient();if(action==='newCase')return await newCase();if(action==='newTask')return newTask();if(action==='newFact')return newFact();if(action==='newDocument')return newDocument();if(action==='changeStatus')return changeStatus();if(action==='closeModal')return closeModal();
  if(action==='backCases'||action==='goCases'){S.caseId=null;S.view='cases';return await render()}
  if(action==='goTasks'){S.caseId=null;S.view='tasks';return await render()}
