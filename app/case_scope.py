@@ -10,17 +10,30 @@ Production use still needs independent privacy, security and regulatory review.
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import and_, exists, or_, select
+from sqlalchemy import and_, exists, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.case_scope_models import CaseAccessGrant
 from app.engagement_models import (EngagementScreen, MatterAssignment,
                                    ServiceAgreementDraft, ServiceSignedCopy)
-from app.models import Case
+from app.models import Case, Membership
 from app.schemas import Role
 from app.settings import get_settings
 
 MANAGERS = {Role.owner, Role.admin}
+
+
+def active_staff_member(db: Session, org_id: UUID, subject: str, roles: tuple[str, ...]) -> bool:
+    """Reviewer-authorized staff lookup; PostgreSQL does not expose teammates' rows."""
+    if db.bind is not None and db.bind.dialect.name == 'postgresql':
+        return bool(db.scalar(text(
+            "SELECT crm_active_member_in_roles(:org, :subject, CAST(:roles AS text[]))"
+        ), {'org': org_id, 'subject': subject, 'roles': list(roles)}))
+    return db.scalar(select(Membership.id).where(
+        Membership.org_id == org_id, Membership.subject == subject,
+        Membership.is_active.is_(True), Membership.role.in_(roles)
+    )) is not None
+
 MUTATIONS = {"POST", "PATCH", "PUT", "DELETE"}
 
 
