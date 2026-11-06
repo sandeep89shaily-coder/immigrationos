@@ -57,7 +57,9 @@ def create_organization(payload: OrganizationCreate, db: Session = Depends(get_d
     try:
         db.add(org)
         db.flush()
-        db.add(Membership(org_id=org_id, subject=principal.sub, role=Role.owner.value, is_active=True))
+        db.add(Membership(org_id=org_id, subject=principal.sub, role=Role.owner.value, is_active=True,
+                          verified_email=principal.email.strip().casefold()
+                          if principal.email_verified and principal.email else None))
         # Audit RLS requires an active membership to exist before its INSERT.
         db.flush()
         record_event(db, OrgAccess(org_id, principal, Role.owner), "organization.created", "organization", org_id)
