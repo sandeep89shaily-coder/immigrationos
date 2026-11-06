@@ -172,11 +172,13 @@ from fastapi.staticfiles import StaticFiles
 from app.workspace import router as workspace_router
 from app.portal import router as portal_router, staff_router as portal_staff_router
 from app.ircc_registry import router as ircc_registry_router
+from app.evidence_matrix import router as evidence_router
 
 app.include_router(workspace_router)
 app.include_router(portal_router)
 app.include_router(portal_staff_router)
 app.include_router(ircc_registry_router)
+app.include_router(evidence_router)
 STATIC_DIR = Path(__file__).resolve().parent / 'static'
 app.mount('/app/static', StaticFiles(directory=STATIC_DIR), name='workspace-static')
 
