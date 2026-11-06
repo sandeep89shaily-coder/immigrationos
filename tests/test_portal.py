@@ -109,6 +109,10 @@ def test_document_request_client_upload_quarantine_and_revocation(api, monkeypat
     staff_url=f'/api/v1/orgs/{org}/cases/{case}'
     assert client.get(f'{staff_url}/documents/{docid}/download').status_code == 423
     assert client.post(f'{staff_url}/documents/{docid}/extract').status_code == 423
+    gate = client.get(f'{staff_url}/readiness')
+    assert gate.status_code == 200
+    assert gate.json()['review_gate'] == 'review_required'
+    assert any('malware clearance' in x for x in gate.json()['reasons'])
     grants=client.get(base+'/grants')
     assert grants.status_code == 200 and len(grants.json()) == 1
     assert client.post(base+'/grants/'+grants.json()[0]['id']+'/revoke').status_code == 200
