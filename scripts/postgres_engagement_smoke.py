@@ -104,6 +104,12 @@ try:
             assert case.status_code == 201, (case.status_code, case.text)
             assert case.json()["regulated_authority_independently_verified"] is False
             assert len(api.get(base + "/matters").json()) == 1
+            linked = api.get(f"/api/v1/orgs/{org_id}/engagements/cases/{case.json()['case_id']}")
+            assert linked.status_code == 200, (linked.status_code, linked.text)
+            assert linked.json()["has_current_reviewed_signed_agreement"] is True
+            revisions = api.get(base + "/history")
+            assert revisions.status_code == 200
+            assert revisions.json()["drafts"][0]["signed_copy"]["accepted_by_staff"] is True
             tenants.append((identity["sub"], org_id, client_id))
 
         for sub, own_org, own_client in tenants:
@@ -113,6 +119,7 @@ try:
             other_org, other_client = next(
                 (org, c) for user, org, c in tenants if org != own_org)
             assert api.get(f"/api/v1/orgs/{other_org}/engagements/clients/{other_client}").status_code == 404
+            assert api.get(f"/api/v1/orgs/{other_org}/engagements/clients/{other_client}/history").status_code == 404
             assert api.get(f"/api/v1/orgs/{own_org}/engagements/clients/{other_client}").status_code == 404
 
 finally:
