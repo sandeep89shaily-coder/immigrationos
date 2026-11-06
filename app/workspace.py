@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.access import OrgAccess, READ_ROLES, WRITE_ROLES, allow, get_org_access
-from app.case_scope import MANAGERS, visible_case_ids
+from app.case_scope import MANAGERS, visible_case_ids, visible_client_filter
 from app.db import get_db
 from app.main import record_event
 from app.models import Case, CaseDocument, CaseFact, CaseIssue, CaseTask, Client, FactSuggestion
@@ -69,7 +69,7 @@ def dashboard(org_id: UUID, db: Session = Depends(get_db), access: OrgAccess = D
             if model is Case:
                 stmt = stmt.where(Case.id.in_(scope))
             elif model is Client:
-                stmt = stmt.where(Client.id.in_(select(Case.client_id).where(Case.id.in_(scope))))
+                stmt = stmt.where(visible_client_filter(org_id, access.principal.sub, access.role))
             else:
                 stmt = stmt.where(model.case_id.in_(scope))
         return db.scalar(stmt) or 0
