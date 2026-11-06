@@ -14,6 +14,8 @@ bearer = HTTPBearer(auto_error=False)
 @dataclass(frozen=True)
 class Principal:
     sub: str
+    email: str | None = None
+    email_verified: bool = False
 
 
 @lru_cache(maxsize=1)
@@ -38,7 +40,8 @@ def get_principal(credentials: HTTPAuthorizationCredentials | None = Depends(bea
         subject = claims.get("sub")
         if not isinstance(subject, str) or not subject or len(subject) > 255:
             raise ValueError("Invalid subject")
-        return Principal(sub=subject)
+        return Principal(sub=subject, email=claims.get("email") if isinstance(claims.get("email"), str) else None,
+                         email_verified=claims.get("email_verified") is True)
     except Exception:
         # Never log token contents, claims, or source documents.
         raise HTTPException(status_code=401, detail="Invalid or expired bearer token", headers={"WWW-Authenticate": "Bearer"}) from None
