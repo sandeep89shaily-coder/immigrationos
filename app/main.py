@@ -30,7 +30,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()],
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PATCH"],
+    allow_methods=["GET", "POST", "PATCH", "PUT"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
@@ -208,6 +208,8 @@ from app.form_workflow_profiles import router as form_workflow_router
 app.include_router(form_workflow_router)
 from app.application_package import router as application_package_router
 app.include_router(application_package_router)
+from app.applicant_profiles import router as applicant_profiles_router
+app.include_router(applicant_profiles_router)
 app.include_router(evidence_router)
 app.include_router(study_intake_client_router)
 app.include_router(study_intake_staff_router)

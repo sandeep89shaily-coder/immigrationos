@@ -107,7 +107,7 @@ async function renderCase(){const [cases,clients,tasks,issues,facts,docs,readine
  const c=cases.find(c=>c.id===S.caseId);if(!c){S.caseId=null;return render()};const client=clients.find(x=>x.id===c.client_id);
  const worksheet=await api(q()+`/cases/${S.caseId}/worksheets/${c.application_type==='work_permit'?'work_permit_demo':'study_permit_demo'}`);
  S.data={cases,clients,tasks,issues,facts,docs,readiness,suggestions,worksheet};
- const tabs=['overview','evidence','planning','package','intake','documents','suggestions','worksheet','preflight','representative','tasks','issues','portal'];
+ const tabs=['overview','applicant','evidence','planning','package','intake','documents','suggestions','worksheet','preflight','representative','tasks','issues','portal'];
  let content='';
  if(S.tab==='overview') content=`${gateWidget(readiness)}<div class="two-col">${panel('Matter details',`<div class="panel-body">${keyValue('Application type',c.application_type.replaceAll('_',' '))}${keyValue('Client',client?client.first_name+' '+client.last_name:'Unknown')}${keyValue('Opened',d(c.created_at))}${keyValue('Status',c.status)}</div>`)}${panel('Evidence summary',`<div class="panel-body">${keyValue('Verified facts',String(readiness.verified_facts))}${keyValue('Pending verification',String(readiness.pending_facts))}${keyValue('Open exceptions',String(readiness.open_issues))}${keyValue('Documents uploaded',String(readiness.documents))}</div>`)}</div>`;
  if(S.tab==='overview'){const eg=await api(q()+'/engagements/cases/'+S.caseId);const condition=eg.has_current_reviewed_signed_agreement?'Current staff-reviewed agreement attached':'REVIEW REQUIRED — '+eg.warning;const role=S.orgs.find(x=>x.id===S.org)?.role;const manager=['owner','admin','consultant'].includes(role);content='<div class="callout">'+h(condition)+'</div>'+(!eg.engagement_link_missing&&manager?'<p>'+btn('Manage case assistant access','scope:team','smallbtn')+'</p>':'')+content;}
@@ -131,6 +131,7 @@ async function renderCase(){const [cases,clients,tasks,issues,facts,docs,readine
 }
 
  if(S.tab==='package')content=await renderPackage();
+ if(S.tab==='applicant')content=await renderApplicantCase(c.client_id);
  if(S.tab==='intake'){
   if(c.application_type!=='study_permit'){
    content=panel('Client intake','<div class="panel-body"><div class="callout">The preliminary questionnaire currently supports study permit matters only.</div></div>');
@@ -252,6 +253,7 @@ async function eventHandler(e){const tab=e.target.closest('[data-tab]');if(tab){
  if(action.startsWith('staff:'))return await staffAction(action);
  if(action.startsWith('eg:'))return await egAction(action);
  if(action.startsWith('pkg:'))return await pkgAction(action);
+ if(action.startsWith('applicant:'))return await applicantAction(action);
  if(action.startsWith('crm:'))return await crmAction(action);
  if(action.startsWith('repOperation:')){S.repOperation=action.split(':')[1];return await render()}
 if(action.startsWith('repChannel:')){S.repChannel=action.split(':')[1];return await render()}
