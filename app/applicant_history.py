@@ -17,7 +17,7 @@ from app.applicant_history_models import ApplicantHistory
 from app.db import get_db
 from app.main import record_event
 from app.models import Case, Client, CaseFact, CaseDocument
-from app.workspace import insert_fact_with_conflicts, ensure_case_open
+from app.workspace import insert_fact_with_conflicts, ensure_case_open, existing_document
 from app.workspace_schemas import FactCreate
 from app.schemas import Role
 
@@ -222,11 +222,7 @@ def link_history_evidence(org_id: UUID, case_id: UUID, record_id: UUID, field_ke
     value = item.details.get(field_key)
     if not isinstance(value, str) or not value:
         raise HTTPException(404, "History field not available")
-    source = db.scalar(select(CaseDocument).where(
-        CaseDocument.org_id == org_id, CaseDocument.case_id == case_id,
-        CaseDocument.id == payload.document_id))
-    if source is None:
-        raise HTTPException(404, "Supporting document not available in this case")
+    source = existing_document(db, org_id, case_id, payload.document_id)
     path = canonical_history_path(item, field_key)
     # Deliberately no human-verification promotion. History edits leave prior
     # facts intact; subsequent versions create conflicts for review.
