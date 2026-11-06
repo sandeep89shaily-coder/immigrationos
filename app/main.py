@@ -174,6 +174,7 @@ from app.portal import router as portal_router, staff_router as portal_staff_rou
 from app.ircc_registry import router as ircc_registry_router
 from app.form_preflight import router as form_preflight_router
 from app.evidence_matrix import router as evidence_router
+from app.study_intake import client_router as study_intake_client_router, staff_router as study_intake_staff_router
 
 app.include_router(workspace_router)
 app.include_router(portal_router)
@@ -181,6 +182,8 @@ app.include_router(portal_staff_router)
 app.include_router(ircc_registry_router)
 app.include_router(form_preflight_router)
 app.include_router(evidence_router)
+app.include_router(study_intake_client_router)
+app.include_router(study_intake_staff_router)
 from app.review_snapshots import router as review_snapshots_router
 app.include_router(review_snapshots_router)
 STATIC_DIR = Path(__file__).resolve().parent / 'static'
