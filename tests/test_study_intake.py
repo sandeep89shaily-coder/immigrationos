@@ -149,10 +149,10 @@ def test_case_grants_revocation_and_staff_roles(api):
     who["sub"] = "junior-reviewer"
     path = _staff_url(org, case)
     listing = client.get(path)
-    assert listing.status_code == 200
-    current_id = listing.json()["current_submission_id"]
-    assert client.post(path + f"/{current_id}/answers/identity.family_name/decide",
-                       json={"decision": "accept"}).status_code == 403
+    assert listing.status_code == 404  # Firm membership alone grants no case access.
+    # No assistant case grant exists, so signoff is also inaccessible.
+    assert client.post(path + "/00000000-0000-4000-8000-000000000001/answers/identity.family_name/decide",
+                       json={"decision": "accept"}).status_code == 404
     who["sub"] = "not-a-member"
     assert client.get(path).status_code == 404
     who["sub"] = staff
