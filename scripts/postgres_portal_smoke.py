@@ -7,11 +7,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from cryptography.fernet import Fernet
 from app.settings import get_settings
-import app.portal as portal
 from app.malware_scan import ScanVerdict
 from fastapi.testclient import TestClient
 from app.auth import Principal, get_principal
 from app.main import app
+import app.portal as portal
 
 person = {'sub': 'staff', 'email': None, 'verified': False}
 
