@@ -1,0 +1,26 @@
+name: IRCC form catalog observation (review only)
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "19 12 * * 1"
+permissions:
+  contents: read
+jobs:
+  observe-official-index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Observe official IRCC index — NO automated catalog publication
+        run: python -m scripts.observe_ircc_catalog --output reports/ircc-index.json
+      - name: Upload research-only observation
+        uses: actions/upload-artifact@v4
+        with:
+          name: ircc-index-observation
+          path: |
+            reports/ircc-index.json
+            reports/ircc-index.md
+          retention-days: 30
