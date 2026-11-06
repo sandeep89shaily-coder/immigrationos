@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.access import OrgAccess, READ_ROLES, allow, get_org_access
 from app.db import get_db
 from app.evidence_matrix import TEMPLATE_VERSION, _case, _matrix
+from app.intake_models import StudyIntakeSubmission, StudyIntakeDecision
 from app.main import record_event
 from app.models import (CaseDocument, CaseFact, CaseIssue, CaseTask, EvidenceReviewSnapshot)
 from app.portal_models import DocumentRequest, PortalSubmission
@@ -47,6 +48,9 @@ def case_fingerprint(db: Session, org_id: UUID, case_id: UUID, filing_context: s
         'tasks': rows(CaseTask, ('id', 'status')),
         'requests': rows(DocumentRequest, ('id', 'status', 'document_type')),
         'submissions': rows(PortalSubmission, ('id', 'scan_status', 'document_id')),
+        'client_intake': rows(StudyIntakeSubmission, ('id', 'template_version', 'answer_sha256')),
+        'intake_reviews': rows(StudyIntakeDecision, ('id', 'submission_id', 'field_path',
+                                                    'decision', 'created_fact_id')),
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
     return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
