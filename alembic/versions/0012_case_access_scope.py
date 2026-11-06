@@ -13,6 +13,7 @@ depends_on = None
 
 
 def upgrade():
+    op.add_column('clients', sa.Column('created_by_sub', sa.String(255)))
     op.create_table(
         "case_access_grants",
         sa.Column("id", sa.Uuid(), primary_key=True),
@@ -135,6 +136,7 @@ def downgrade():
     op.drop_index("ix_case_access_subject_active", table_name="case_access_grants")
     op.drop_index("uq_case_access_active_subject", table_name="case_access_grants")
     op.drop_table("case_access_grants")
+    op.drop_column("clients", "created_by_sub")
     if op.get_bind().dialect.name == "postgresql":
         op.execute("DROP FUNCTION IF EXISTS crm_active_member_in_roles(uuid,text,text[])")
         op.execute("DROP POLICY IF EXISTS membership_insert ON memberships")
