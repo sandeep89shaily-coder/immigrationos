@@ -304,3 +304,48 @@ def test_cancelled_appointment_can_be_rescheduled_and_assistants_cannot_signoff(
     assert client.post(f"/api/v1/orgs/{org}/crm/prospects/{lead}/activities",json={
         "kind": "note", "content": "Synthetic assistant activity recorded only."
     }).status_code == 201
+
+
+def test_closing_lost_prospect_preserves_history_and_blocks_new_consultation(api):
+    client, _, _ = api
+    org, lead = new_lead(api, "crm-lost")
+    root = f"/api/v1/orgs/{org}/crm/prospects/{lead}"
+    closed = client.post(root + "/close", json={"reason": "Not proceeding with fictional consultation"})
+    assert closed.status_code == 200, closed.text
+    assert closed.json()["history_retained"] is True
+    assert client.get(root).json()["stage"] == "closed"
+    assert any("Not proceeding" in x["content"] for x in client.get(root + "/activities").json())
+    assert client.post(root + "/convert").status_code == 409
+    assert client.post(root + "/close", json={"reason": "Double closure"}).status_code == 409
+    start = datetime.now(timezone.utc) + timedelta(days=3)
+    assert client.post(root + "/consultations", json={
+        "starts_at": start.isoformat(),
+        "ends_at": (start + timedelta(minutes=40)).isoformat()}).status_code == 409
+
+
+def test_prospect_email_and_name_whitespace_are_rejected(api):
+    client, _, _ = api
+    org = new_org(client, "crm-normalization")
+    base = f"/api/v1/orgs/{org}/crm/prospects"
+    for bad in [
+        lead_payload(email=" ", phone=None),
+        lead_payload(email="not-an-email"),
+        lead_payload(first_name=" "),
+        lead_payload(last_name=" "),
+    ]:
+        assert client.post(base, json=bad).status_code == 422
+    good = client.post(base, json=lead_payload(
+        first_name="  Synthetic ", email="  FICTIONAL.PROSPECT@EXAMPLE.TEST "))
+    assert good.status_code == 201, good.text
+    assert good.json()["first_name"] == "Synthetic"
+    assert good.json()["email"] == "fictional.prospect@example.test"
+
+
+def test_closing_requires_cancelling_booked_consultation(api):
+    client, _, _ = api
+    org, lead = new_lead(api, "crm-no-bypass")
+    booking_id = booking(api, org, lead)
+    root = f"/api/v1/orgs/{org}/crm/prospects/{lead}"
+    assert client.post(root + "/close", json={"reason": "Cannot skip booked event"}).status_code == 409
+    assert client.post(root + f"/consultations/{booking_id}/cancel").status_code == 200
+    assert client.post(root + "/close", json={"reason": "Appointment cancelled"}).status_code == 200
