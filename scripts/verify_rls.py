@@ -83,7 +83,9 @@ with engine.connect() as conn:
                          "crm_consultation_agreements", "crm_consultation_signed_copies", "crm_followups",
                          "engagement_screens", "service_agreement_drafts",
                          "service_signed_copies", "matter_assignments", "case_access_grants",
-                         "staff_invitations", "case_application_packages", "package_form_copies"]
+                         "staff_invitations", "case_application_packages", "package_form_copies",
+                         "applicant_profiles", "applicant_family_members", "case_answer_drafts",
+                         "applicant_histories", "requirement_decisions", "requirement_document_reviews"]
         policies = conn.execute(text("""SELECT relname, relrowsecurity, relforcerowsecurity
             FROM pg_class WHERE relname = ANY(:tables)"""), {"tables": tenant_tables}).all()
         assert len(policies) == len(tenant_tables), "RLS FAILED: missing tables"
