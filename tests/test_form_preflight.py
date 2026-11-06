@@ -157,3 +157,20 @@ def test_open_issues_and_stale_official_source_block_acknowledgement(api, monkey
     stale = client.get(_url(org, case)).json()
     assert stale["source_recheck_required"] is True
     assert any("older than 30 days" in s for s in stale["blockers"])
+
+
+def test_verified_mapped_fact_without_document_provenance_blocks_review(api):
+    client, _, factory = api
+    org, case = setup_case(api, "preflight-provenance")
+    _verified_fields(api, org, case)
+    with factory() as db:
+        db.add(CaseFact(
+            org_id=UUID(org), case_id=UUID(case), document_id=None,
+            field_path="identity.given_name", value="Avery",
+            review_status="verified", created_by_sub="synthetic-staff",
+            reviewed_by_sub="synthetic-reviewer"))
+        db.commit()
+    result = client.get(_url(org, case))
+    assert result.status_code == 200, result.text
+    assert result.json()["internal_preflight_status"] == "blocked"
+    assert any("lacks a linked supporting document" in s for s in result.json()["blockers"])
