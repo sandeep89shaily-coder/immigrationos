@@ -83,7 +83,7 @@ with engine.connect() as conn:
                          "crm_consultation_agreements", "crm_consultation_signed_copies", "crm_followups",
                          "engagement_screens", "service_agreement_drafts",
                          "service_signed_copies", "matter_assignments", "case_access_grants",
-                         "staff_invitations"]
+                         "staff_invitations", "case_application_packages", "package_form_copies"]
         policies = conn.execute(text("""SELECT relname, relrowsecurity, relforcerowsecurity
             FROM pg_class WHERE relname = ANY(:tables)"""), {"tables": tenant_tables}).all()
         assert len(policies) == len(tenant_tables), "RLS FAILED: missing tables"
@@ -166,6 +166,18 @@ with engine.connect() as conn:
 
 
 
+
+        package_privileges = conn.execute(text("""SELECT
+            has_table_privilege(current_user, 'case_application_packages', 'UPDATE'),
+            has_table_privilege(current_user, 'case_application_packages', 'DELETE'),
+            has_table_privilege(current_user, 'package_form_copies', 'DELETE'),
+            has_column_privilege(current_user, 'package_form_copies', 'document_id', 'UPDATE'),
+            has_column_privilege(current_user, 'package_form_copies', 'form_code', 'UPDATE'),
+            has_column_privilege(current_user, 'package_form_copies', 'linked_document_sha256', 'UPDATE'),
+            has_column_privilege(current_user, 'package_form_copies', 'review_status', 'UPDATE')
+        """)).one()
+        assert package_privileges == (False, False, False, False, False, False, True), \
+            "RLS FAILED: a pinned package/form copy could be rewritten"
 
         # Positive control: a member can record a review for their own firm's case.
         context(conn, principal_a, tenant_a)
