@@ -8,10 +8,10 @@ async function renderStaffTeam(){
    $('mainContent').innerHTML=page('Practice team','Only owners and administrators manage membership.');
    return;
  }
- const [members,invitations]=await Promise.all([
-   api(teamRoot()+'/members'),api(teamRoot()+'/invitations')
+ const [members,invitations,me]=await Promise.all([
+   api(teamRoot()+'/members'),api(teamRoot()+'/invitations'),api(teamRoot()+'/me')
  ]);
- S.staffMembers=members;S.staffInvites=invitations.items;
+ S.staffMembers=members;S.staffInvites=invitations.items;S.userSub=me.subject;
  let top=btn('Invite teammate','staff:invite','primary')+' '+btn('Join another firm','staff:join','smallbtn');
  let flash='';
  if(S.pendingStaffToken){
