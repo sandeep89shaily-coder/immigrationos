@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.access import OrgAccess, WRITE_ROLES, allow, get_org_access
 from app.applicant_models import ApplicantProfile, FamilyMember, CaseAnswerDraft
+from app.applicant_history_models import ApplicantHistory
 from app.db import get_db
 from app.ircc_registry import REGISTRY
 from app.main import record_event
@@ -164,6 +165,11 @@ def build_answer_draft(org_id: UUID, case_id: UUID,
         ApplicantProfile.org_id == org_id, ApplicantProfile.client_id == case.client_id))
     if profile is None:
         raise HTTPException(409, "Create the reusable applicant profile first")
+    histories = db.scalars(select(ApplicantHistory).where(
+        ApplicantHistory.org_id == org_id, ApplicantHistory.client_id == case.client_id
+    ).order_by(ApplicantHistory.kind, ApplicantHistory.id)).all()
+    history_snapshot = {"records": [{"id": str(row.id), "kind": row.kind,
+        "version": row.version, "details": row.details} for row in histories]}
     identity = profile.data.get("identity", {})
     # Canonical paths and observed worklist labels, NOT PDF field identifiers.
     mapping = {
@@ -180,6 +186,7 @@ def build_answer_draft(org_id: UUID, case_id: UUID,
         org_id=org_id, case_id=case_id, client_id=case.client_id,
         form_code=form_code, source_revision=source.revision_label,
         profile_version=profile.version, answers=answers,
+        history_snapshot=history_snapshot,
         unresolved_fields=unresolved, created_by_sub=access.principal.sub)
     db.add(draft)
     db.flush()
@@ -195,6 +202,7 @@ def _draft_json(item: CaseAnswerDraft) -> dict:
         "id": str(item.id), "case_id": str(item.case_id),
         "form_code": item.form_code, "source_revision": item.source_revision,
         "profile_version": item.profile_version, "answers": item.answers,
+        "history_snapshot": item.history_snapshot,
         "unresolved_fields": item.unresolved_fields,
         "created_at": item.created_at.isoformat(),
         "status": "unverified_internal_draft",

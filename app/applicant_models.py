@@ -59,6 +59,7 @@ class CaseAnswerDraft(Base):
     source_revision: Mapped[str] = mapped_column(String(120), nullable=False)
     profile_version: Mapped[int] = mapped_column(Integer, nullable=False)
     answers: Mapped[dict] = mapped_column(JSON, nullable=False)
+    history_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     unresolved_fields: Mapped[list] = mapped_column(JSON, nullable=False)
     created_by_sub: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
