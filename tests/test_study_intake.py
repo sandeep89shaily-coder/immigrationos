@@ -162,7 +162,10 @@ def test_case_grants_revocation_and_staff_roles(api):
     who.update(sub="questionnaire-revoke-client", email="sample.person@example.test",
                email_verified=True)
     assert client.get(_client_url(case)).status_code == 404
-    assert _submit(client, case).status_code == 404
+    assert client.post(_client_url(case) + "/submissions", json={
+        "template_version": "study-permit-preliminary-intake-2026-11-06",
+        "acknowledged_notice": True, "answers": SYNTHETIC_ANSWERS
+    }).status_code == 404
 
 
 def test_other_firm_case_is_hidden_even_with_valid_client_identity(api):
