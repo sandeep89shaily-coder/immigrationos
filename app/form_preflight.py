@@ -17,13 +17,14 @@ from sqlalchemy.orm import Session
 from app.access import OrgAccess, READ_ROLES, allow, get_org_access
 from app.db import get_db, set_db_context
 from app.ircc_registry import REGISTRY, ObservedForm, source_metadata
+from app.intake_models import StudyIntakeSubmission, StudyIntakeDecision
 from app.models import AuditEvent, Case, CaseDocument, CaseFact, CaseIssue, CaseTask
 from app.portal_models import PortalSubmission
 from app.schemas import Role
 
 router = APIRouter(prefix="/api/v1/orgs/{org_id}/ircc", tags=["ircc-internal-preflight"])
 REVIEW_ROLES = {Role.owner, Role.admin, Role.consultant}
-PREFLIGHT_SCHEMA_VERSION = "evidence-preflight-1"
+PREFLIGHT_SCHEMA_VERSION = "evidence-preflight-2"
 ACK_ACTION = "form.internal_preflight_acknowledged"
 
 
@@ -60,6 +61,12 @@ def _snapshot(db: Session, case: Case, source: ObservedForm,
         CaseIssue.org_id == org_id, CaseIssue.case_id == case_id)).all()
     tasks = db.scalars(select(CaseTask).where(
         CaseTask.org_id == org_id, CaseTask.case_id == case_id)).all()
+    intake_submissions = db.scalars(select(StudyIntakeSubmission).where(
+        StudyIntakeSubmission.org_id == org_id, StudyIntakeSubmission.case_id == case_id
+    ).order_by(StudyIntakeSubmission.created_at.desc(),
+               StudyIntakeSubmission.id.desc())).all()
+    intake_decisions = db.scalars(select(StudyIntakeDecision).where(
+        StudyIntakeDecision.org_id == org_id, StudyIntakeDecision.case_id == case_id)).all()
 
     doc_by_id = {doc.id: doc for doc in documents}
     scan_by_id = {item.document_id: item.scan_status for item in submissions}
@@ -81,6 +88,12 @@ def _snapshot(db: Session, case: Case, source: ObservedForm,
         blockers.append("Open case tasks require review")
     if any(f.review_status == "pending" for f in facts):
         blockers.append("Unreviewed factual claims remain")
+    if intake_submissions:
+        latest = intake_submissions[0]
+        decisions_for_latest = {decision.field_path for decision in intake_decisions
+                                if decision.submission_id == latest.id}
+        if any(path not in decisions_for_latest for path in latest.answers):
+            blockers.append("Client questionnaire answers await consultant decisions")
     if any(f.review_status == "verified" and not f.reviewed_by_sub for f in facts):
         blockers.append("A verified fact has no recorded human reviewer")
     if any(f.document_id is not None and f.document_id not in doc_by_id for f in facts):
@@ -135,6 +148,15 @@ def _snapshot(db: Session, case: Case, source: ObservedForm,
                          key=lambda x: x["id"]),
         "tasks": sorted([{"id": str(t.id), "status": t.status} for t in tasks],
                         key=lambda x: x["id"]),
+        "client_intake_revisions": sorted([{
+            "id": str(row.id), "sha256": row.answer_sha256,
+            "version": row.template_version
+        } for row in intake_submissions], key=lambda x: x["id"]),
+        "client_intake_decisions": sorted([{
+            "id": str(d.id), "submission_id": str(d.submission_id),
+            "field_path": d.field_path, "decision": d.decision,
+            "created_fact_id": str(d.created_fact_id) if d.created_fact_id else None
+        } for d in intake_decisions], key=lambda x: x["id"]),
     }
     # The case UUID makes the digest case-specific, avoiding reuse across matters.
     snapshot_sha256 = hashlib.sha256(json.dumps(

@@ -104,7 +104,7 @@ async function renderCase(){const [cases,clients,tasks,issues,facts,docs,readine
  const c=cases.find(c=>c.id===S.caseId);if(!c){S.caseId=null;return render()};const client=clients.find(x=>x.id===c.client_id);
  const worksheet=await api(q()+`/cases/${S.caseId}/worksheets/${c.application_type==='work_permit'?'work_permit_demo':'study_permit_demo'}`);
  S.data={cases,clients,tasks,issues,facts,docs,readiness,suggestions,worksheet};
- const tabs=['overview','evidence','planning','documents','suggestions','worksheet','preflight','tasks','issues','portal'];
+ const tabs=['overview','evidence','planning','intake','documents','suggestions','worksheet','preflight','tasks','issues','portal'];
  let content='';
  if(S.tab==='overview') content=`${gateWidget(readiness)}<div class="two-col">${panel('Matter details',`<div class="panel-body">${keyValue('Application type',c.application_type.replaceAll('_',' '))}${keyValue('Client',client?client.first_name+' '+client.last_name:'Unknown')}${keyValue('Opened',d(c.created_at))}${keyValue('Status',c.status)}</div>`)}${panel('Evidence summary',`<div class="panel-body">${keyValue('Verified facts',String(readiness.verified_facts))}${keyValue('Pending verification',String(readiness.pending_facts))}${keyValue('Open exceptions',String(readiness.open_issues))}${keyValue('Documents uploaded',String(readiness.documents))}</div>`)}</div>`;
  if(S.tab==='evidence')content=panel('Case facts and human verification',`<div class="panel-body">${facts.length?facts.map(factItem).join(''):empty('No evidence facts','Add a manually documented fact to begin the evidence record.')}</div>`,btn('+ Add fact','newFact','primary smallbtn'));
@@ -125,6 +125,32 @@ async function renderCase(){const [cases,clients,tasks,issues,facts,docs,readine
  }else html+=empty('Select filing context','Choose inside or outside Canada to view case evidence coverage.');
  content=panel('RCIC study-permit evidence planning',`<div class=panel-body>${html}</div>`,actions);
 }
+
+ if(S.tab==='intake'){
+  if(c.application_type!=='study_permit'){
+   content=panel('Client intake','<div class="panel-body"><div class="callout">The preliminary questionnaire currently supports study permit matters only.</div></div>');
+  }else{
+   const result=await api(q()+'/cases/'+S.caseId+'/study-intake');
+   const versions=result.submissions;
+   let body='<div class="callout">Client questionnaire answers are self-reported. Accepting an answer adds a PENDING fact. Review against the original document before professional verification. This is not an official IRCC form.</div>';
+   if(!versions.length)body+=empty('No questionnaires received','Invite the fictional client through the Portal tab. The questionnaire appears automatically on their study-permit case.');
+   else{
+    const current=versions[0];
+    const reviewed=new Map(current.decisions.map(d=>[d.field_path,d]));
+    body+='<div class="meta">Current version: '+h(current.template_version)+' · Submitted '+d(current.submitted_at)+' · '+versions.length+' revision(s)</div>';
+    body+=Object.entries(current.answers).map(([path,value])=>{
+     const decision=reviewed.get(path);
+     const controls=decision?chip(decision.decision):
+       btn('Accept to pending facts','intakeDecision:'+current.id+':'+path+':accept','smallbtn')+' '+
+       btn('Dismiss','intakeDecision:'+current.id+':'+path+':dismiss','smallbtn');
+     return '<div class="item-row"><div style="flex:1;min-width:0"><div class="meta">'+h(path)+'</div>'+
+       '<div class="item-title">'+h(value)+'</div></div><div class="push">'+controls+'</div></div>';
+    }).join('');
+    if(versions.length>1)body+='<p class="warning-text">Earlier submissions are retained for history but cannot be accepted after a newer revision. Previously accepted facts are not silently overwritten.</p>';
+   }
+   content=panel('Client study-permit intake review','<div class="panel-body">'+body+'</div>');
+  }
+ }
 if(S.tab==='documents')content=panel('Encrypted development documents',`<div class="panel-body"><div class="warning-text">Development only — synthetic documents. Production uploads are disabled until malware scanning and privacy approval.</div>${docs.length?docs.map(docItem).join(''):empty('No documents uploaded','Upload a synthetic test document to test the secure storage workflow.')}</div>`,btn('+ Upload','newDocument','primary smallbtn'));
  if(S.tab==='suggestions')content=panel('Document extraction proposals',`<div class="panel-body"><div class="callout">Proposals come from a deterministic labelled-field parser, not an AI model. Every proposal needs human acceptance, then separate fact verification.</div>${suggestions.length?suggestions.map(s=>`<div class="item-row"><div class="bullet">◇</div><div style="flex:1"><div class="meta">${h(s.field_path)} · Page ${s.source_page} · ${h(s.extraction_method)}</div><div class="item-title">${h(s.value)}</div><div class="evidence-preview">${h(s.source_excerpt)}</div></div><div class="push">${chip(s.status)} ${s.status==='proposed'?`<div style="margin-top:8px">${btn('Accept','acceptSuggestion:'+s.id,'smallbtn')} ${btn('Dismiss','dismissSuggestion:'+s.id,'smallbtn')}</div>`:''}</div></div>`).join(''):empty('No extraction suggestions','Upload a synthetic labelled PDF/text document and select Extract on the Documents tab.')}</div>`);
  if(S.tab==='worksheet')content=panel('Internal preparation worksheet',`<div class="panel-body"><div class="warning-text">This is an INTERNAL DEMONSTRATION worksheet — not an official IRCC form and not an eligibility decision.</div>${gateWidget(readiness)}<div class="callout">${h(worksheet.title)} · ${h(worksheet.template_version)} · ${h(worksheet.status.replaceAll('_',' '))}</div>${table(['Field','Mapped verified value','Status'],worksheet.fields.map(f=>`<tr><td><strong>${h(f.label)}</strong><div class="meta">${h(f.field_path)}</div></td><td>${h(f.value||'—')}</td><td>${chip(f.status)}</td></tr>`))}</div>`);
@@ -215,6 +241,14 @@ if(action==='seedDemo'){if(!confirm('Create fictional demonstration clients, cas
  if(action==='backCases'||action==='goCases'){S.caseId=null;S.view='cases';return await render()}
  if(action==='goTasks'){S.caseId=null;S.view='tasks';return await render()}
  if(action==='goReview'){S.caseId=null;S.view='review';return await render()}
+ if(action.startsWith('intakeDecision:')){
+  const [,submissionId,path,decision]=action.split(':');
+  if(!confirm((decision==='accept'?'Accept as an UNVERIFIED pending fact?':'Dismiss this client-reported answer?')+
+     ' No IRCC field will be approved automatically.'))return;
+  await api(q()+'/cases/'+S.caseId+'/study-intake/'+submissionId+
+    '/answers/'+encodeURIComponent(path)+'/decide',{method:'POST',body:{decision}});
+  await render();return toast(decision==='accept'?'Answer added as pending fact':'Answer dismissed');
+ }
  const [command,id]=action.split(':');if(command==='resolveIssue')return resolveIssue(id);
  if(command==='downloadDoc')return await downloadDoc(id);
  if(command==='aiDoc'){

@@ -1,4 +1,4 @@
-# ImmigrationOS Workspace v0.4 — Client portal development preview
+# ImmigrationOS — evidence-centered developer workspace
 
 **Status: functional development preview, not a commercial or production-ready immigration platform. Fictional data only.**
 
@@ -49,7 +49,7 @@ pip install -e ".[test]"
 pytest -q
 ```
 
-The 18 test cases cover access rules, tenant isolation, case state changes, review gates, task handling, encrypted synthetic upload/download, extraction, source matching, suggestion approval, internal worksheet mapping and synthetic sample creation. Tests use SQLite for speed; SQLite cannot prove PostgreSQL row-level security.
+The test suite covers access rules, tenant isolation, case state changes, client intake, review gates, encrypted synthetic uploads, source matching and questionnaire evidence decisions. The current test count and PostgreSQL results are verified in GitHub Actions. SQLite unit tests alone cannot prove PostgreSQL row-level security.
 
 ### PostgreSQL row-level security validation
 
@@ -115,7 +115,7 @@ This release intentionally uses a dependency-light web UI for a working preview 
 ## Major NOT-yet-built capabilities
 
 - Actual official IRCC form mappings/generation, barcode validation and compliant handoff to government portals.
-- Real client self-service portal, invitation and consent flow, messaging, client-upload security.
+- Production-grade client self-service portal: robust notices/consent, secure messaging, translated conditional questionnaires, retention and independent upload-security certification. Development invitation and upload workflows already exist.
 - Financial ledgers, trust accounting, e-signatures, invoicing and payment processing.
 - Official IRCC regulatory monitoring, legal rule versioning and validated eligibility logic.
 - Production-ready malware/OCR scanning, object storage, key management, retention/deletion, backups, incident response, tenant and case permission policy, MFA enforcement, compliance and security audits.
@@ -156,3 +156,11 @@ References: [ClamAV INSTREAM protocol](https://docs.clamav.net/manual/Usage/Clam
 The read-only staff API `/api/v1/orgs/{org_id}/ircc/forms` records the official IMM 1294 and IMM 5709 instruction pages, their observed June 2026 revision labels, source-check date and inside/outside-Canada filing contexts. The case endpoint `/api/v1/orgs/{org_id}/ircc/cases/{case_id}/forms/{form_code}/preview?filing_context=outside_canada` reports **internal** field-coverage previews from human-verified case facts and source IDs. Wrong tenant, case type or filing context is blocked. A stale-source warning is raised after 30 days, and **all previews remain blocked from official filing**, even when every displayed fact is verified. This is not a PDF form-filling engine.
 
 See `docs/IRCC_FORM_REGISTRY.md` for official references and the release criteria for future IRCC PDF adapters.
+
+## Client questionnaire milestone (2026-11-06)
+
+A source-linked **preliminary study-permit questionnaire** is now available in the client portal for development-only study-permit cases. The client provides identity, passport, intended study and financial information, acknowledges a versioned development data-use notice, and submits an immutable response revision.
+
+Consultant workspace → **Intake** displays submitted answers with per-field review. Accepting an answer creates a **PENDING** canonical fact, never a verified form value. New submissions invalidate the existing evidence-review and IRCC-preflight fingerprints. Immutable records, staff RBAC, client-grant authorization and PostgreSQL RLS are validated by the CI suite.
+
+**It is not IMM 1294, not a complete study-permit application, does not establish legal eligibility and does not submit to IRCC. Use fictitious test information only.** See [docs/STUDY_PERMIT_CLIENT_INTAKE.md](docs/STUDY_PERMIT_CLIENT_INTAKE.md) for API details, tests, privacy boundaries and official reference links.

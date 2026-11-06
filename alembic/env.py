@@ -4,7 +4,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.db import Base
-from app import models, portal_models  # noqa: F401 -- register models
+from app import models, portal_models, intake_models  # noqa: F401 -- register models
 from app.settings import get_settings
 
 config = context.config

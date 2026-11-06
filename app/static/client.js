@@ -26,13 +26,56 @@ async function api(path,options={}){if(!S.token)throw Error('Sign in first');if(
  const res=await fetch(path,{...options,headers,cache:'no-store'});
  if(!res.ok){const payload=await res.json().catch(()=>({}));throw Error(payload.detail||`Request failed (${res.status})`)}
  return res.json()}
+
+async function renderStudyIntake(caseId){
+ const schema=await api('/api/v1/client/cases/'+encodeURIComponent(caseId)+'/study-intake');
+ const controls=schema.fields.map(q=>{
+  const required=q.required?' required':'';
+  const field=q.kind==='choice'
+   ? '<select data-question-path name="'+esc(q.path)+'"'+required+'><option value="">Select…</option>'+
+     q.choices.map(o=>'<option value="'+esc(o)+'">'+esc(o.replaceAll('_',' '))+'</option>').join('')+'</select>'
+   : '<input data-question-path name="'+esc(q.path)+'" type="'+(q.kind==='date'?'date':q.kind==='money'?'number':'text')+'"'+
+     (q.kind==='money'?' min="0" step="0.01"':'')+' maxlength="300"'+required+'>';
+  return '<div class="intake-field"><label>'+esc(q.label)+(q.required?' *':'')+'</label>'+field+'</div>';
+ }).join('');
+ return '<section class="card"><h2>Study-permit preliminary intake</h2>'+
+   '<p>Answer from your original documents. Your consultant must independently review each answer; this is not an official IRCC form.</p>'+
+   (schema.last_submitted_at?'<p class="status">Previous submission received '+esc(new Date(schema.last_submitted_at).toLocaleString())+'. A new submission creates a new revision.</p>':'')+
+   '<form data-intake="'+esc(caseId)+'" data-template="'+esc(schema.template_version)+'">'+
+   '<div class="intake-grid">'+controls+'</div>'+
+   '<p class="meta">'+esc(schema.notice)+'</p>'+
+   '<label class="intake-ack"><input type="checkbox" name="acknowledged_notice" required> I acknowledge the development data-use notice above (not consent to external AI processing).</label>'+
+   '<p><button class="primary" type="submit">Submit preliminary intake</button></p>'+
+   '</form></section>';
+}
+
 async function load(){const cases=await api('/api/v1/client/cases');if(!cases.length){$('cases').innerHTML='<div class="empty">No linked cases yet. Accept an invitation from your consultant to begin.</div>';return}
  const blocks=[];for(const c of cases){const requests=await api(`/api/v1/client/cases/${encodeURIComponent(c.id)}/requests`);
- blocks.push(`<section class="card"><h2>${esc(c.title)} <span class="status">${esc(c.status)}</span></h2><p>${esc(c.application_type.replaceAll('_',' '))}</p><h3>Requested documents</h3>${requests.length?requests.map(r=>`<div class="request"><div><strong>${esc(r.title)}</strong><div class="meta">${esc(r.instructions)}${r.due_at?' · Due '+esc(new Date(r.due_at).toLocaleDateString()):''}</div></div>${r.status==='open'&&c.status!=='closed'?`<form data-request="${esc(r.id)}" data-case="${esc(c.id)}"><input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.txt" required aria-label="Upload ${esc(r.title)}"><button class="primary" type="submit">Upload</button></form>`:`<span class="status">${esc(r.status)}</span>`}</div>`).join(''):'<p>No outstanding document requests.</p>'}</section>`)}$('cases').innerHTML=blocks.join('');}
+ const intake=c.application_type==='study_permit'?await renderStudyIntake(c.id):'';
+ blocks.push(`<section class="card"><h2>${esc(c.title)} <span class="status">${esc(c.status)}</span></h2><p>${esc(c.application_type.replaceAll('_',' '))}</p><h3>Requested documents</h3>${requests.length?requests.map(r=>`<div class="request"><div><strong>${esc(r.title)}</strong><div class="meta">${esc(r.instructions)}${r.due_at?' · Due '+esc(new Date(r.due_at).toLocaleDateString()):''}</div></div>${r.status==='open'&&c.status!=='closed'?`<form data-request="${esc(r.id)}" data-case="${esc(c.id)}"><input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.txt" required aria-label="Upload ${esc(r.title)}"><button class="primary" type="submit">Upload</button></form>`:`<span class="status">${esc(r.status)}</span>`}</div>`).join(''):'<p>No outstanding document requests.</p>'}</section>${intake}`)}$('cases').innerHTML=blocks.join('');}
 async function init(){try{S.config=await fetch('/app/config',{cache:'no-store'}).then(r=>r.json());$('signin').onclick=login;
  $('signout').onclick=()=>{S.token=null;S.refresh=null;$('portal').classList.add('hidden');$('welcome').classList.remove('hidden');$('signout').classList.add('hidden');notice('Signed out of this browser session.')};
  $('refresh').onclick=()=>load().catch(e=>notice(e.message));
  $('claim').onsubmit=async e=>{e.preventDefault();try{await api('/api/v1/client/invitations/accept',{method:'POST',body:{token:$('token').value.trim()}});$('token').value='';notice('Invitation accepted.');await load()}catch(error){notice(error.message)}};
+ document.addEventListener('submit',async e=>{
+  const form=e.target.closest('form[data-intake]');
+  if(!form)return;
+  e.preventDefault();
+  const button=form.querySelector('button[type=submit]');button.disabled=true;
+  try{
+   const answers={};
+   for(const element of form.querySelectorAll('[data-question-path]')){
+    const value=(element.value||'').trim();
+    if(value)answers[element.name]=value;
+   }
+   const noticeConfirmed=form.querySelector('[name=acknowledged_notice]').checked;
+   const response=await api('/api/v1/client/cases/'+encodeURIComponent(form.dataset.intake)+'/study-intake/submissions',{
+    method:'POST',body:{template_version:form.dataset.template,acknowledged_notice:noticeConfirmed,answers}
+   });
+   notice('Intake revision received. '+response.answer_count+' answers are awaiting your consultant’s review; none is a verified application answer.');
+   await load();
+  }catch(error){notice(error.message)}finally{button.disabled=false}
+ });
  document.addEventListener('submit',async e=>{const form=e.target.closest('form[data-request]');if(!form)return;e.preventDefault();let b=form.querySelector('button');b.disabled=true;
  try{const file=form.querySelector('input[type=file]').files[0];if(!file||file.size>8*1024*1024)throw Error('Maximum file size is 8 MB');
  const payload=new FormData();payload.append('file',file);
