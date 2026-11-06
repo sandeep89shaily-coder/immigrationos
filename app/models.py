@@ -190,3 +190,26 @@ class FactSuggestion(Base):
     reviewed_by_sub: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+class EvidenceReviewSnapshot(Base):
+    """Append-only record of what an authorized *staff* reviewer examined.
+
+    This records an operational review, NOT an RCIC credential verification,
+    IRCC approval, submission authority, or final eligibility determination.
+    """
+    __tablename__ = 'evidence_review_snapshots'
+    __table_args__ = (
+        ForeignKeyConstraint(['org_id', 'case_id'], ['cases.org_id', 'cases.id'], name='fk_review_snapshot_case'),
+        Index('ix_review_snapshots_case', 'org_id', 'case_id', 'created_at'),
+        CheckConstraint("filing_context IN ('inside_canada','outside_canada')", name='ck_review_snapshot_context'),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    org_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey('organizations.id'), nullable=False)
+    case_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    filing_context: Mapped[str] = mapped_column(String(32), nullable=False)
+    template_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    case_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    reviewer_sub: Mapped[str] = mapped_column(String(255), nullable=False)
+    review_note: Mapped[str] = mapped_column(String(1200), nullable=False)
+    open_issues_at_review: Mapped[int] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
