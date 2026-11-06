@@ -5,18 +5,20 @@ const crmPath=()=>crmBase()+'/'+encodeURIComponent(S.prospectId);
 
 async function renderCRM(){
  if(!S.prospectId){
-   const leads=await api(crmBase());
+   const [leads, overdue]=await Promise.all([api(crmBase()),api(q()+'/crm/follow-ups?overdue_only=true')]);
    const rows=leads.map(p=>`<tr class=clickable data-prospect='${h(p.id)}'><td><strong>${h(p.first_name)} ${h(p.last_name)}</strong></td><td>${h(p.email||p.phone||'—')}</td><td>${chip(p.stage)}</td><td>${h(p.source)}</td><td>${d(p.created_at)}</td><td>→</td></tr>`);
-   $('mainContent').innerHTML=page('Prospects & consultations','From fictional first enquiry to a governed consultation and client record.',btn('+ New prospect','crm:new','primary'))+panel('Prospect pipeline',table(['Prospect','Contact','Stage','Source','Created',''],rows));
+   const urgent=overdue.items.length?panel('Overdue internal follow-ups',`<div class=panel-body><div class=warning-text>${overdue.items.length} overdue task(s). These are internal reminders only; no email is sent.</div>${overdue.items.map(t=>`<div class=item-row data-prospect='${h(t.prospect_id)}'><div class=bullet>!</div><div><strong>${h(t.title)}</strong><div class=meta>Due ${new Date(t.due_at).toLocaleString()} · Assigned ${h(t.assigned_to_sub)}</div></div></div>`).join('')}</div>`):'';
+   $('mainContent').innerHTML=page('Prospects & consultations','From fictional first enquiry to a governed consultation and client record.',btn('+ New prospect','crm:new','primary'))+urgent+panel('Prospect pipeline',table(['Prospect','Contact','Stage','Source','Created',''],rows));
    return;
  }
- const [p,activities,consultations]=await Promise.all([api(crmPath()),api(crmPath()+'/activities'),api(crmPath()+'/consultations')]);
+ const [p,activities,consultations,followups]=await Promise.all([api(crmPath()),api(crmPath()+'/activities'),api(crmPath()+'/consultations'),api(crmPath()+'/follow-ups')]);
  const consultation=consultations.find(x=>x.status==='scheduled')||consultations[0]||null;
  const agreements=consultation?await api(crmPath()+'/consultations/'+consultation.id+'/agreements'):[];
  const current=agreements[0]||null,proof=current?.signed_copy||null;
- S.crmConsultation=consultation; S.crmAgreement=current; S.crmProof=proof;
+ S.crmConsultation=consultation; S.crmAgreement=current; S.crmProof=proof;S.crmFollowUps=followups;
  let actions=btn('← Prospects','crm:back','smallbtn');
  if(['new','contacted'].includes(p.stage))actions+=' '+btn('Record activity','crm:activity','smallbtn');
+ if(!['closed','converted'].includes(p.stage))actions+=' '+btn('+ Follow-up','crm:followup','smallbtn');
  if(!consultations.some(c=>c.status==='scheduled')&&!['converted','closed'].includes(p.stage))actions+=' '+btn('Schedule consultation','crm:schedule','primary smallbtn');
  if(!consultations.some(c=>c.status==='scheduled')&&!['converted','closed'].includes(p.stage))actions+=' '+btn('Close prospect','crm:close','smallbtn');
  const summary=panel('Prospect record',`<div class=panel-body>${keyValue('Name',p.first_name+' '+p.last_name)}${keyValue('Contact',p.email||p.phone)}${keyValue('Source',p.source)}${keyValue('Stage',p.stage)}${keyValue('Marketing/outreach consent',p.outreach_consent?'Recorded ('+(p.consent_source||'')+')':'Not recorded')}</div>`);
@@ -49,7 +51,9 @@ async function renderCRM(){
  }
  if(p.stage==='consulted')appointment+=panel('Client conversion','<div class=panel-body><p>Consultation terms have been manually reviewed. Further immigration advice requires a separate written service agreement and related checks.</p>'+btn('Convert to client record','crm:convert','primary smallbtn')+'</div>');
  if(p.stage==='converted')appointment+=panel('Client conversion',`<div class=panel-body>${keyValue('Client ID',p.converted_client_id)}<div class=callout>Conversion does not authorize further consulting or IRCC submission. A separate service agreement remains outstanding.</div></div>`);
- $('mainContent').innerHTML=page('Prospect · '+p.first_name+' '+p.last_name,'Controlled consultation and signed-copy review, using fictional records only.',actions)+`<div class=two-col>${summary}${history}</div>`+appointment;
+ const taskRows=followups.map(t=>`<div class=item-row><div class=bullet>☑</div><div style='flex:1'><div class=item-title>${h(t.title)}</div><div class=meta>Due ${new Date(t.due_at).toLocaleString()} · ${h(t.assigned_to_sub)}</div></div><div class=push>${t.overdue?'<span class=warning-text>OVERDUE</span> ':''}${chip(t.status)}${t.status==='open'?' '+btn('Complete','crm:followupComplete:'+t.id,'smallbtn')+' '+btn('Cancel','crm:followupCancel:'+t.id,'smallbtn'):''}</div></div>`).join('');
+ const tasksPanel=panel('Prospect follow-ups',`<div class=panel-body><div class=callout>Internal queue only — no automatic reminder delivery. Overdue status uses the actual entered date and time.</div>${followups.length?taskRows:empty('No follow-ups','Add an assigned next step and due date.')}</div>`);
+ $('mainContent').innerHTML=page('Prospect · '+p.first_name+' '+p.last_name,'Controlled consultation and signed-copy review, using fictional records only.',actions)+`<div class=two-col>${summary}${history}</div>`+tasksPanel+appointment;
 }
 
 function crmNewProspect(){
@@ -61,6 +65,9 @@ function crmActivity(){
  modal(`<h2>Record prospect interaction</h2><p>Manual record only; no actual message will be sent.</p><form>${selectField('kind','Type',[['call','Call'],['email','Email (record only)'],['meeting','Meeting'],['note','Internal note']])}<div class=form-field><label>Details</label><textarea name=content rows=4 minlength=5 maxlength=1200 required></textarea></div>${actions('Record interaction')}</form>`,async f=>{await api(crmPath()+'/activities',{method:'POST',body:values(f)})});
 }
 
+function crmFollowUp(){
+ modal(`<h2>Assigned prospect follow-up</h2><p>This is an internal next-action queue. No email, SMS, or calendar reminder will be sent automatically.</p><form>${fld('title','Action description','text','required minlength="4" maxlength="180"')}${fld('due_at','Due date (local time)','datetime-local','required')}${selectField('priority','Priority',[['normal','Normal'],['urgent','Urgent']])}${actions('Add follow-up')}</form>`,async f=>{const v=values(f);v.due_at=new Date(v.due_at).toISOString();await api(crmPath()+'/follow-ups',{method:'POST',body:v})});
+}
 function crmSchedule(){
  modal(`<h2>Schedule consultation</h2><p>Dates are stored with explicit timezone; consultation agreements must be signed before regulated consultation.</p><form>${fld('starts_at','Start (your local time)','datetime-local','required')}${fld('ends_at','End (your local time)','datetime-local','required')}${actions('Schedule consultation')}</form>`,async f=>{const v=values(f);await api(crmPath()+'/consultations',{method:'POST',body:{starts_at:new Date(v.starts_at).toISOString(),ends_at:new Date(v.ends_at).toISOString()}})});
 }
@@ -93,6 +100,10 @@ async function crmAction(action){
  if(action==='crm:back'){S.prospectId=null;return render()}
  if(action==='crm:new')return crmNewProspect();
  if(action==='crm:activity')return crmActivity();
+ if(action==='crm:followup')return crmFollowUp();
+ if(action.startsWith('crm:followupComplete:')){const id=action.split(':')[2];await api(crmPath()+'/follow-ups/'+encodeURIComponent(id)+'/complete',{method:'POST'});await render();return toast('Follow-up marked complete')}
+ if(action.startsWith('crm:followupCancel:')){const id=action.split(':')[2];if(!confirm('Cancel this internal follow-up?'))return;await api(crmPath()+'/follow-ups/'+encodeURIComponent(id)+'/cancel',{method:'POST'});await render();return toast('Follow-up cancelled')}
+
  if(action==='crm:close')return modal('<h2>Close prospect</h2><p>Keep the historical contact record. This does not delete prospect information.</p><form><div class=form-field><label>Reason</label><textarea name=reason rows=3 required minlength=5 maxlength=500></textarea></div>'+actions('Close prospect')+'</form>',async f=>{await api(crmPath()+'/close',{method:'POST',body:values(f)})});
 
  if(action==='crm:schedule')return crmSchedule();

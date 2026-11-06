@@ -80,7 +80,7 @@ with engine.connect() as conn:
         tenant_tables = ["clients", "cases", "audit_events", "case_documents", "case_facts",
                          "case_issues", "case_tasks", "fact_suggestions", "evidence_review_snapshots",
                          "crm_prospects", "crm_prospect_activities", "crm_consultations",
-                         "crm_consultation_agreements", "crm_consultation_signed_copies"]
+                         "crm_consultation_agreements", "crm_consultation_signed_copies", "crm_followups"]
         policies = conn.execute(text("""SELECT relname, relrowsecurity, relforcerowsecurity
             FROM pg_class WHERE relname = ANY(:tables)"""), {"tables": tenant_tables}).all()
         assert len(policies) == len(tenant_tables), "RLS FAILED: missing tables"
@@ -107,6 +107,15 @@ with engine.connect() as conn:
         """)).one()
         assert crm_privileges == (False, False, False, False, True, False), \
             "RLS FAILED: CRM immutable terms/activity or signed-copy hash is mutable"
+
+        crm_followup_privileges = conn.execute(text("""SELECT
+            has_table_privilege(current_user, 'crm_followups', 'DELETE'),
+            has_column_privilege(current_user, 'crm_followups', 'due_at', 'UPDATE'),
+            has_column_privilege(current_user, 'crm_followups', 'assigned_to_sub', 'UPDATE'),
+            has_column_privilege(current_user, 'crm_followups', 'status', 'UPDATE')""")).one()
+        assert crm_followup_privileges == (False, False, False, True), \
+            "RLS FAILED: follow-up due dates or assignees can be altered"
+
 
 
         # Positive control: a member can record a review for their own firm's case.
