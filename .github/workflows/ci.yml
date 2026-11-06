@@ -19,6 +19,8 @@ jobs:
       - run: pip install -e '.[test]'
       - run: pytest -q
       - run: python -m compileall -q app alembic scripts
+      - name: Check consultant JavaScript syntax
+        run: node --check app/static/workspace.js
       - name: Validate consultant and client JavaScript syntax
         run: |
           node --check app/static/workspace.js
