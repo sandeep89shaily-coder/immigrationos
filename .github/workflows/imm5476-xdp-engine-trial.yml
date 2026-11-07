@@ -31,6 +31,12 @@ jobs:
           jar tf qoppa-trial.jar | grep -q 'com/qoppa/pdfFields/PDFFields.class'
       - name: Compile Qoppa importer
         run: javac -cp qoppa-trial.jar experiments/QoppaImm5476Trial.java
+      - name: Short-lived internal SDK handoff for offline official-template validation
+        uses: actions/upload-artifact@v4
+        with:
+          name: qoppa-private-evaluation-sdk
+          path: qoppa-trial.jar
+          retention-days: 1
       - name: Compile TallComponents vendor API
         run: dotnet build experiments/TallImm5476Trial/TallImm5476Trial.csproj -c Release
 
