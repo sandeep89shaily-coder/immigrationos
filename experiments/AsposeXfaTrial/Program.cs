@@ -40,7 +40,7 @@ try
     string[] names = document.Form.XFA.FieldNames;
     report["xfa_field_count"] = names.Length;
     var selected = new Dictionary<string, string>();
-    foreach ((string key, var source) in values)
+    foreach (var (key, source) in values)
     {
         string[] matches = names.Where(name => name == source.Field
                  || name.EndsWith("." + source.Field, StringComparison.Ordinal)).ToArray();
