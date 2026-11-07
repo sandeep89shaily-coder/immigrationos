@@ -85,7 +85,7 @@ public final class QoppaImm5476Trial {
             throw new IllegalStateException("Observed surname is not text: " + name);
         }
         TextField field = (TextField)generic;
-        if (!field.isRichText() || !field.getValue().isEmpty()) {
+        if (!field.isRichText() || !"\u00a0".equals(field.getValue())) {
             throw new IllegalStateException("Expected an empty original rich surname");
         }
         field.setFieldFlags(field.getFieldFlags() & ~TextField.FF_RICHTEXT);
