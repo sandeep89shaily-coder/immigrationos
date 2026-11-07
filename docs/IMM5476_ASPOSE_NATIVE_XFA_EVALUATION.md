@@ -22,7 +22,7 @@ This output has the Aspose trial watermark, is incomplete and unsigned, and **ha
 
 The Python `facades.Form.save(output_path)` path performed a **full PDF rewrite**. The output did not retain the original PDF bytes as a prefix. The original `/Perms /UR3` signature's signed ByteRange remained `[0, 2002846, 2015078, 1109]`, but the bytes covered by that range were changed in the Aspose output. The visible `/UR3` dictionary is NOT proof that its usage-rights signature remains valid. **Do not production-enable this output.**
 
-Aspose documents a native .NET `Document.Save()` incremental mode when the document is opened with a writable stream. A separate C# trial in `experiments/AsposeXfaTrial` copies the exact official original first, applies the true XFA indexer mapping on that copy, uses parameterless `Save()`, and rejects output that fails original-byte-prefix preservation.
+Aspose documents a native .NET `Document.Save()` incremental mode when the document is opened with a writable stream. A separate C# trial on branch `experiment/aspose-xfa-incremental-signature-safety` copies the exact official original first, applies the true XFA indexer mapping on that copy, uses parameterless `Save()`, and rejects output that fails original-byte-prefix preservation.
 
 Even a byte-preserving incremental update requires an actual Adobe Reader test to determine whether the form still allows all expected operations.
 
