@@ -11,7 +11,10 @@ permissions:
 
 jobs:
   commercial-xfa-evaluation:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
     timeout-minutes: 18
     env:
       ENVIRONMENT: development
@@ -19,7 +22,6 @@ jobs:
       AUTH_ISSUER: https://issuer.example.invalid/realm
       AUTH_AUDIENCE: immigrationos-api
       AUTH_JWKS_URL: https://issuer.example.invalid/jwks
-      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
