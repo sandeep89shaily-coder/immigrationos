@@ -2,6 +2,7 @@
 from uuid import UUID, uuid4
 
 from app import imm5476_packets as packets
+from app.imm5476_case_preview import CANONICAL_FIELDS
 from app.models import Case, CaseDocument, CaseFact, CaseIssue, Membership
 from app.imm5476_packet_models import IMM5476ReviewPacket
 from tests.test_imm5476_case_preview import make_case
@@ -25,7 +26,7 @@ def reviewed(api, org, case, fields=2):
             filename="fictional-reviewed-file.pdf", document_type="passport",
             mime_type="application/pdf", size_bytes=100, sha256="b"*64,
             storage_key=uuid4().hex, uploaded_by_sub="test-user-a"))
-        keys = list(packets.current_snapshot.__globals__["build_preview"].__globals__["CANONICAL_FIELDS"].values())
+        keys = list(CANONICAL_FIELDS.values())
         for i, path in enumerate(keys[:fields]):
             db.add(CaseFact(
                 org_id=UUID(org), case_id=UUID(case), document_id=doc_id,
@@ -67,17 +68,10 @@ def test_partial_review_packet_is_immutable_and_stale_on_change(api, monkeypatch
     doc_id = reviewed(api, org, case, fields=2)
     monkeypatch.setattr(packets, "scan_status_by_document",
                         lambda *args: {doc_id: "cleared"})
-    snapshot = client.get(preview).json()
-    # Preview has its own independent scan reader, which is not patched.
-    # Packet capture must match the recomputed server-side snapshot hash.
-    from app import imm5476_case_preview as live
-    monkeypatch.setattr(live, "scan_status_by_document",
-                        lambda *args: {doc_id: "cleared"})
-    # Endpoint imported scan_status_by_document at module import and the
-    # mutation above intentionally does not affect it.
-    direct = packets.current_snapshot
+    # Capture recomputes its own authoritative source snapshot with exactly
+    # the same scan-status evidence used for submission of the checkpoint.
     with factory() as db:
-        package, live_report = direct(db, UUID(org), UUID(case))
+        package, live_report = packets.current_snapshot(db, UUID(org), UUID(case))
     response = capture(client, endpoint, live_report["snapshot_sha256"])
     assert response.status_code == 201, response.text
     packet = response.json()
