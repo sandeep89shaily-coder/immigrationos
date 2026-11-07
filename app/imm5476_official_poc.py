@@ -194,7 +194,7 @@ def _verify_result(raw: bytes, output: bytes, original_template: bytes):
             widgets = [
                 ref.get_object()
                 for page in saved.pages for ref in page.get("/Annots", [])
-                if str(ref.get_object().get("/T", "")) == "familyName[0]"
+                if str(ref.get_object().get("/T", "")).endswith("familyName[0]")
                 and str(ref.get_object().get("/V", "")) == SYNTHETIC_VALUES[key]
             ]
             if len(widgets) != 1:
