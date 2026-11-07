@@ -53,11 +53,11 @@ def prepare(blank: Path, out_dir: Path) -> None:
     if len(reader.pages) != 4:
         raise ValueError("Official form page count changed")
     original = _find_xfa_packet(reader, "datasets").get_object().get_data()
-    for variant in ("scalar", "rich"):
+    for variant in ("scalar", "rich", "appointing-paid-cicc"):
         root = _parse_xml(original)
         for key in _KEYS:
             binding = _FIELDS[key]
-            if variant == "scalar" and key.endswith("_family"):
+            if variant != "rich" and key.endswith("_family"):
                 # Preserve all surrounding form data but replace ONLY the
                 # special XHTML value node with simple XFA element text.
                 node_path = binding.xfa_path[:-3]
@@ -67,6 +67,14 @@ def prepare(blank: Path, out_dir: Path) -> None:
                 surname.text = SYNTHETIC_VALUES[key]
             else:
                 _xfa_leaf(root, binding.xfa_path).text = SYNTHETIC_VALUES[key]
+        if variant == "appointing-paid-cicc":
+            # The source XFA item labels for option zero are both "1".
+            for radio_name in ("RadioButtonList", "compensated"):
+                matched = [node for node in root.iter()
+                           if node.tag.rsplit("}", 1)[-1] == radio_name]
+                if len(matched) != 1 or len(matched[0]) != 0:
+                    raise ValueError("Official XFA radio structure changed")
+                matched[0].text = "1"
         xdp = ET.Element(f"{{{_XDP}}}xdp")
         xdp.append(root)
         xml = ET.tostring(xdp, encoding="utf-8", xml_declaration=True)
@@ -75,13 +83,13 @@ def prepare(blank: Path, out_dir: Path) -> None:
             raise ValueError("Invalid generated XDP envelope")
         for key in _KEYS:
             path = _FIELDS[key].xfa_path
-            if variant == "scalar" and key.endswith("_family"):
+            if variant != "rich" and key.endswith("_family"):
                 path = path[:-3]
             node = _xfa_node(parsed[0], path)
             if len(node) != 0 or node.text != SYNTHETIC_VALUES[key]:
                 raise ValueError("Incorrect fictional XDP field: " + key)
         (out_dir / f"fictional-{variant}.xdp").write_bytes(xml)
-    print("Prepared two genuine-template, data-only XDP files; NO PDF modifications")
+    print("Prepared three genuine-template XDP files, including fictional radio choice; NO PDF modifications")
 
 
 def verify(blank: Path, filled: Path, report: Path) -> bool:
