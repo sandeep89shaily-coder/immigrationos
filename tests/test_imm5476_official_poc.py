@@ -55,7 +55,7 @@ def synthetic_blank():
     for page in writer.pages:
         for ref in page.get("/Annots", []):
             annot = ref.get_object()
-            if str(annot.get("/T", "")) == "familyName[0]":
+            if str(annot.get("/T", "")).endswith("familyName[0]"):
                 annot[NameObject("/RV")] = TextStringObject(
                     '<body xmlns="http://www.w3.org/1999/xhtml" '
                     'xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/">'
