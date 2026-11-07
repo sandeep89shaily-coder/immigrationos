@@ -40,9 +40,15 @@ def synthetic_blank():
     ds.set_data(ET.tostring(xfa_root, encoding="utf-8", xml_declaration=True))
     template = DecodedStreamObject()
     template.set_data(b'<template xmlns="http://www.xfa.org/schema/xfa-template/3.6/"/>')
+    preamble = DecodedStreamObject()
+    preamble.set_data(b'<?xml version="1.0" encoding="UTF-8"?>\n<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/">')
+    postamble = DecodedStreamObject()
+    postamble.set_data(b'</xdp:xdp>')
     acro[NameObject("/XFA")] = ArrayObject([
+        TextStringObject("preamble"), writer._add_object(preamble),
         TextStringObject("template"), writer._add_object(template),
         TextStringObject("datasets"), writer._add_object(ds),
+        TextStringObject("postamble"), writer._add_object(postamble),
     ])
     writer._root_object[NameObject("/Perms")] = DictionaryObject({
         NameObject("/UR3"): NameObject("/SyntheticTestOnly")})
@@ -96,3 +102,19 @@ def test_missing_xfa_path_fails_before_output_is_written(tmp_path, monkeypatch):
     with pytest.raises(poc.IMM5476ExperimentBlocked, match="mapping|binding|missing|changed"):
         poc.generate_fictional_imm5476(blank, tmp_path / "out.pdf")
     assert not (tmp_path / "out.pdf").exists()
+
+def test_concatenated_xfa_document_has_one_xml_declaration(tmp_path, monkeypatch):
+    """Adobe parses all XFA packet streams as one XDP document."""
+    raw = synthetic_blank()
+    blank = tmp_path / "blank.pdf"
+    blank.write_bytes(raw)
+    monkeypatch.setattr(poc, "SOURCE_SHA256", sha256(raw).hexdigest())
+    monkeypatch.setattr(poc, "PAGE_COUNT", 1)
+    result = tmp_path / "result.pdf"
+    poc.generate_fictional_imm5476(blank, result)
+    read = PdfReader(result)
+    xfa = read.trailer["/Root"]["/AcroForm"].get_object()["/XFA"]
+    joined = b"".join(xfa[i+1].get_object().get_data() for i in range(0, len(xfa), 2))
+    parsed = poc._parse_xml(joined)
+    assert parsed.tag.endswith("xdp")
+    assert joined.count(b"<?xml") <= 1

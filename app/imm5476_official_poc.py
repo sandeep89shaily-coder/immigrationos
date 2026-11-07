@@ -173,6 +173,13 @@ def _verify_result(raw: bytes, output: bytes, original_template: bytes):
         raise IMM5476ExperimentBlocked("Page count changed")
     if "/UR3" not in saved.trailer["/Root"].get("/Perms", {}).get_object():
         raise IMM5476ExperimentBlocked("Reader usage-rights marker lost")
+    # Parse the COMPLETE concatenation of XFA packets, not just datasets.
+    xfa = saved.trailer["/Root"]["/AcroForm"].get_object()["/XFA"]
+    full_xdp = b"".join(xfa[i + 1].get_object().get_data()
+                        for i in range(0, len(xfa), 2))
+    full_root = _parse_xml(full_xdp)
+    if not full_root.tag.endswith("xdp"):
+        raise IMM5476ExperimentBlocked("Combined XFA root is not xdp")
     fields = saved.get_fields() or {}
     xfa_root = _parse_xml(_find_xfa_packet(saved, "datasets").get_object().get_data())
     if _find_xfa_packet(saved, "template").get_object().get_data() != original_template:
@@ -202,7 +209,9 @@ def generate_fictional_imm5476(blank_pdf: Path, output_pdf: Path) -> dict:
     dataset_xref, original_template, root = _validate_original(raw)
     for key, binding in _FIELDS.items():
         _xfa_leaf(root, binding.xfa_path).text = SYNTHETIC_VALUES[key]
-    patched_xml = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    # XFA streams form ONE XDP document; the preamble owns the only XML declaration.
+    # An inner declaration triggers Adobe XML parsing error 17.
+    patched_xml = ET.tostring(root, encoding="utf-8", xml_declaration=False)
     if len(patched_xml) > 3 * 1024 * 1024:
         raise IMM5476ExperimentBlocked("Patched XFA data exceeds size limits")
     output_pdf.parent.mkdir(parents=True, exist_ok=True)
