@@ -19,6 +19,7 @@ import tempfile
 import xml.etree.ElementTree as ET
 
 from pypdf import PdfReader
+from pypdf.generic import NullObject
 from app.imm5476_plain_appearance import repair_family_appearances
 
 FORM_CODE = "IMM5476"
@@ -198,7 +199,7 @@ def _verify_result(raw: bytes, output: bytes, original_template: bytes):
             if len(widgets) != 1:
                 raise IMM5476ExperimentBlocked("Surname widget absent")
             widget = widgets[0]
-            if widget.get("/RV") is not None or int(widget.get("/Ff", 0)) & (1 << 25):
+            if (widget.get("/RV") is not None and not isinstance(widget.get("/RV"), NullObject)) or int(widget.get("/Ff", 0)) & (1 << 25):
                 raise IMM5476ExperimentBlocked("Unexpected rich-text PDF widget")
             ap = widget.get("/AP", {}).get("/N")
             if ap is None:
