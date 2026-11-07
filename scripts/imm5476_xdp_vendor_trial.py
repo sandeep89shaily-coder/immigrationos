@@ -77,7 +77,8 @@ def prepare(blank: Path, out_dir: Path) -> None:
             path = _FIELDS[key].xfa_path
             if variant == "scalar" and key.endswith("_family"):
                 path = path[:-3]
-            if _xfa_leaf(parsed[0], path).text != SYNTHETIC_VALUES[key]:
+            node = _xfa_node(parsed[0], path)
+            if len(node) != 0 or node.text != SYNTHETIC_VALUES[key]:
                 raise ValueError("Incorrect fictional XDP field: " + key)
         (out_dir / f"fictional-{variant}.xdp").write_bytes(xml)
     print("Prepared two genuine-template, data-only XDP files; NO PDF modifications")
@@ -142,8 +143,11 @@ def verify(blank: Path, filled: Path, report: Path) -> bool:
         original_reader = PdfReader(blank, strict=True)
         signature = original_reader.trailer["/Root"]["/Perms"]["/UR3"].get_object()
         br = [int(x) for x in signature["/ByteRange"]]
-        def signed(data):
-            return b"".join(data[br[i]:br[i]+br[i+1]] for i in (0, 2))
+        def signed(blob):
+            if len(br) != 4 or any(v < 0 for v in br) or (
+                    br[0] + br[1] > len(blob) or br[2] + br[3] > len(blob)):
+                raise ValueError("Original Reader usage-rights ByteRange out of bounds")
+            return b"".join(blob[br[i]:br[i]+br[i+1]] for i in (0, 2))
         result["original_ur3_signed_bytes_unchanged"] = (
             signed(data) == signed(original))
         passed = (result["pages"] == 4 and result["all_xfa_match"] and
