@@ -96,3 +96,19 @@ def test_missing_xfa_path_fails_before_output_is_written(tmp_path, monkeypatch):
     with pytest.raises(poc.IMM5476ExperimentBlocked, match="mapping|binding|missing|changed"):
         poc.generate_fictional_imm5476(blank, tmp_path / "out.pdf")
     assert not (tmp_path / "out.pdf").exists()
+
+def test_concatenated_xfa_document_has_one_xml_declaration(tmp_path, monkeypatch):
+    """Adobe parses all XFA packet streams as one XDP document."""
+    raw = synthetic_blank()
+    blank = tmp_path / "blank.pdf"
+    blank.write_bytes(raw)
+    monkeypatch.setattr(poc, "SOURCE_SHA256", sha256(raw).hexdigest())
+    monkeypatch.setattr(poc, "PAGE_COUNT", 1)
+    result = tmp_path / "result.pdf"
+    poc.generate_fictional_imm5476(blank, result)
+    read = PdfReader(result)
+    xfa = read.trailer["/Root"]["/AcroForm"].get_object()["/XFA"]
+    joined = b"".join(xfa[i+1].get_object().get_data() for i in range(0, len(xfa), 2))
+    parsed = poc._parse_xml(joined)
+    assert parsed.tag.endswith("xdp") or parsed.tag.endswith("datasets")
+    assert joined.count(b"<?xml") <= 1
