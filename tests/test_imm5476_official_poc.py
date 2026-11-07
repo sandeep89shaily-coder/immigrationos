@@ -96,8 +96,12 @@ def test_incremental_pdf_preserves_original_and_both_form_layers(tmp_path, monke
         for ref in page.get("/Annots", []):
             annot = ref.get_object()
             if str(annot.get("/V", "")) in ("Sharma", "Kapoor"):
-                rich = ET.fromstring(str(annot["/RV"]))
-                assert "".join(rich.itertext()) == str(annot["/V"])
+                assert annot.get("/RV") is None
+                assert int(annot.get("/Ff", 0)) & (1 << 25) == 0
+                appearance = annot["/AP"]["/N"].get_object().get_data()
+                literal = ("(" + str(annot["/V"]) + ") Tj").encode("ascii")
+                assert appearance.count(literal) == 1
+                assert b"/Helv 9 Tf" in appearance
     with pytest.raises(poc.IMM5476ExperimentBlocked, match="overwrit"):
         poc.generate_fictional_imm5476(blank, output)
 
