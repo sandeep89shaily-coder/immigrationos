@@ -8,6 +8,7 @@ from argparse import ArgumentParser
 from hashlib import sha256
 import json
 from pathlib import Path
+import re
 import xml.etree.ElementTree as ET
 
 from pypdf import PdfReader
@@ -16,8 +17,7 @@ from app.imm5476_official_poc import (
     _parse_xml, _xfa_leaf, SYNTHETIC_VALUES,
 )
 
-_KEYS = ("applicant_family", "applicant_given",
-         "representative_family", "representative_given")
+_KEYS = tuple(SYNTHETIC_VALUES)  # 12 observed fictional fields, never actual client data
 _XDP = "http://ns.adobe.com/xdp/"
 _XFA = "http://www.xfa.org/schema/xfa-data/1.0/"
 ET.register_namespace("xdp", _XDP)
@@ -98,43 +98,68 @@ def verify(blank: Path, filled: Path, report: Path) -> bool:
         result["original_pdf_byte_prefix_preserved"] = data.startswith(original)
         reader = PdfReader(filled, strict=False)
         result["pages"] = len(reader.pages)
-        fields = reader.get_fields() or {}
+        # Qoppa's incremental output can expose a nonstandard /AP dictionary
+        # that makes pypdf.get_fields() fail. Do not mistake this parser issue
+        # for missing XFA values; independently read widgets via PyMuPDF.
+        try:
+            reader.get_fields()
+            result["pypdf_field_parser"] = "success"
+        except Exception as exc:
+            result["pypdf_field_parser"] = type(exc).__name__
+        import fitz
+        with fitz.open(str(filled)) as doc:
+            widget_values = {
+                widget.field_name: str(widget.field_value)
+                for page in doc for widget in (page.widgets() or [])
+            }
         try:
             ds = _find_xfa_packet(reader, "datasets").get_object().get_data()
             root = _parse_xml(ds)
             xfa_values = {}
             for key in _KEYS:
-                name = _FIELDS[key].acroform_name
-                # Scalar XFA has no XHTML descendant path. Do not try to
-                # resolve it until deciding which XDP encoding was saved.
+                wanted = SYNTHETIC_VALUES[key]
                 if key.endswith("_family"):
                     parent = _xfa_node(root, _FIELDS[key].xfa_path[:-3])
-                    value = (parent.text if len(parent) == 0 else
-                             _xfa_leaf(root, _FIELDS[key].xfa_path).text)
+                    encoded = "".join(parent.itertext()).strip()
+                    # A vendor may serialize XFA rich text as escaped XHTML
+                    # inside the XFA datasets. Record whether the expected
+                    # name is present in the actual rich-text payload.
+                    same = (encoded == wanted or bool(re.search(
+                        r">" + re.escape(wanted) + r"</span>", encoded)))
                 else:
-                    value = _xfa_leaf(root, _FIELDS[key].xfa_path).text
-                xfa_values[key] = value == SYNTHETIC_VALUES[key]
+                    same = _xfa_leaf(root, _FIELDS[key].xfa_path).text == wanted
+                xfa_values[key] = same
             result["xfa_matches"] = xfa_values
         except Exception as exc:
             result["xfa_error"] = type(exc).__name__ + ": " + str(exc)[:120]
         result["acroform_matches"] = {
-            key: str(fields.get(_FIELDS[key].acroform_name, {}).get("/V", "")) ==
+            key: widget_values.get(_FIELDS[key].acroform_name, "").strip() ==
                  SYNTHETIC_VALUES[key] for key in _KEYS
         }
         xfa = result.get("xfa_matches", {})
-        result["all_xfa_match"] = len(xfa) == 4 and all(xfa.values())
+        result["all_xfa_match"] = len(xfa) == len(_KEYS) and all(xfa.values())
         result["all_acroform_match"] = all(result["acroform_matches"].values())
-        result["status"] = ("both_layers_pass" if
-                            result["pages"] == 4 and result["all_xfa_match"]
-                            and result["all_acroform_match"] else
-                            "structural_or_data_mismatch")
+        original_reader = PdfReader(blank, strict=True)
+        signature = original_reader.trailer["/Root"]["/Perms"]["/UR3"].get_object()
+        br = [int(x) for x in signature["/ByteRange"]]
+        def signed(data):
+            return b"".join(data[br[i]:br[i]+br[i+1]] for i in (0, 2))
+        result["original_ur3_signed_bytes_unchanged"] = (
+            signed(data) == signed(original))
+        passed = (result["pages"] == 4 and result["all_xfa_match"] and
+                  result["all_acroform_match"] and
+                  result["original_ur3_signed_bytes_unchanged"])
+        result["status"] = ("values_and_signed_bytes_pass_with_parser_warning"
+                            if passed and result["pypdf_field_parser"] != "success"
+                            else "values_and_signed_bytes_pass"
+                            if passed else "structural_or_data_mismatch")
     except Exception as exc:
         result.update(status="readback_error", error_type=type(exc).__name__,
                       error=str(exc)[:250])
     report.parent.mkdir(parents=True, exist_ok=True)
     report.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     print(json.dumps(result, indent=2, sort_keys=True))
-    return result["status"] == "both_layers_pass"
+    return result["status"].startswith("values_and_signed_bytes_pass")
 
 
 def main() -> None:
