@@ -11,6 +11,29 @@ permissions:
   contents: read
 
 jobs:
+  vendor-sdk-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Fetch Qoppa public trial jar without downloading official form
+        run: |
+          curl -fL --retry 2 --connect-timeout 15 --max-time 60 \
+            "https://www.qoppa.com/files/pdffields/jars/v2022R1/jPDFFields.v2022R1.20.jar" \
+            -o qoppa-trial.jar
+          jar tf qoppa-trial.jar | grep -q 'com/qoppa/pdfFields/PDFFields.class'
+      - name: Compile Qoppa importer
+        run: javac -cp qoppa-trial.jar experiments/QoppaImm5476Trial.java
+      - name: Compile TallComponents vendor API
+        run: dotnet build experiments/TallImm5476Trial/TallImm5476Trial.csproj -c Release
+
   prepare-official:
     runs-on: ubuntu-latest
     timeout-minutes: 8
