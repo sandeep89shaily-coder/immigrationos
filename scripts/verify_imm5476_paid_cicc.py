@@ -6,8 +6,8 @@ No PDF modification, Adobe approval, signature validation or official support.
 from hashlib import sha256
 import json
 from pathlib import Path
-import re
 import xml.etree.ElementTree as ET
+from pypdf.generic import NullObject
 import argparse
 
 import fitz
@@ -30,6 +30,16 @@ RADIO_EXPECTATIONS = {
         "IMM_5476[0].Page1[0].SectionB[0].question6[0].questionI[0].uncompensated[0]",
         ["Off"] * 5),
 }
+
+
+def is_plain_surname_node(element: ET.Element, expected: str) -> bool:
+    """Raw XHTML-as-text is NOT valid, even when that XHTML parses as XML.
+
+    The previous Qoppa output stored '<body>...</body>' in element.text;
+    actual Acrobat displayed that markup literally. Require true scalar XFA
+    content for the *explicitly plain-mode* vendor experiment.
+    """
+    return len(element) == 0 and element.text == expected
 
 
 def verify(original_pdf: Path, generated_pdf: Path) -> dict:
@@ -55,20 +65,36 @@ def verify(original_pdf: Path, generated_pdf: Path) -> dict:
                 widgets.setdefault(field.field_name, []).append(
                     (field.field_type_string, str(field.field_value)))
     text_status = {}
-    malformed_surname_xml = []
+    surname_data_plain = {}
     for key, path in TEXT_PATHS.items():
-        stored = node(dataset, path).text or ""
+        field_node = node(dataset, path)
         value = FICTIONAL_VALUES[key]
         if key.endswith("_family"):
-            matches = bool(re.search(r">" + re.escape(value) + r"</span>", stored))
-            try:
-                ET.fromstring(stored)
-            except ET.ParseError:
-                malformed_surname_xml.append(key)
+            matches = is_plain_surname_node(field_node, value)
+            surname_data_plain[key] = matches
         else:
-            matches = stored == value
+            matches = len(field_node) == 0 and field_node.text == value
         visual_data = widgets.get(full_pdf_name(path)) == [("Text", value)]
         text_status[key] = matches and visual_data
+    surname_widgets = {}
+    for page in filled.pages:
+        for ref in page.get("/Annots", []):
+            annot = ref.get_object()
+            for key in ("applicant_family", "representative_family"):
+                if (str(annot.get("/T", "")) == "familyName[0]" and
+                        str(annot.get("/V", "")) == FICTIONAL_VALUES[key]):
+                    matches_plain = (
+                        not int(annot.get("/Ff", 0)) & (1 << 25)
+                        and (annot.get("/RV") is None or
+                             isinstance(annot.get("/RV"), NullObject))
+                    )
+                    surname_widgets.setdefault(key, []).append(matches_plain)
+    surname_structure_ok = (
+        len(surname_widgets) == 2
+        and all(value == [True] for value in surname_widgets.values())
+        and len(surname_data_plain) == 2
+        and all(surname_data_plain.values())
+    )
     xfa_radio = {}
     for name, path in RADIO_PATHS.items():
         xfa_radio[name] = node(dataset, path).text == "1"
@@ -97,8 +123,8 @@ def verify(original_pdf: Path, generated_pdf: Path) -> dict:
         return (data[byte_range[0]:byte_range[0] + byte_range[1]] +
                 data[byte_range[2]:byte_range[2] + byte_range[3]])
     warnings = []
-    if malformed_surname_xml:
-        warnings.append("Vendor-generated surname XHTML is not well-formed")
+    if not surname_structure_ok:
+        warnings.append("Surname XFA data or PDF flags still contain rich-text XML")
     try:
         filled.get_fields()
     except Exception as exc:
@@ -119,7 +145,12 @@ def verify(original_pdf: Path, generated_pdf: Path) -> dict:
         "original_bytes_untouched_prefix": filled_bytes.startswith(original_bytes),
         "original_ur3_signed_bytes_unchanged": signed(filled_bytes) == signed(original_bytes),
         "warnings": warnings,
-        "rich_surname_xhtml_valid": not bool(malformed_surname_xml),
+        "plain_surname_data_valid": surname_structure_ok,
+        "plain_surname_field_details": {
+            key: {"xfa_scalar": surname_data_plain[key],
+                  "no_richtext_pdf_flag_or_rv": surname_widgets.get(key) == [True]}
+            for key in ("applicant_family", "representative_family")
+        },
         "adobe_acrobat_tested": False,
         "commercial_license_verified": False,
         "submission_ready": False,
@@ -130,7 +161,7 @@ def verify(original_pdf: Path, generated_pdf: Path) -> dict:
         report["text_fields_match_both_layers"] == len(TEXT_PATHS) and
         all(radio_status.values()) and
         report["signatures_and_signature_dates_unpopulated"] and
-        report["rich_surname_xhtml_valid"] and
+        report["plain_surname_data_valid"] and
         report["original_ur3_signed_bytes_unchanged"])
     return report
 

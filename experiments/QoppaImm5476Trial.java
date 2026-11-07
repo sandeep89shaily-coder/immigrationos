@@ -44,15 +44,21 @@ public final class QoppaImm5476Trial {
         }
         PDFFields document = new PDFFields(input.toString(), null);
         try {
+            boolean paidCicc = xdpFile.equals("fictional-appointing-paid-cicc.xdp");
+            // CRITICAL: Disable source rich-text mode BEFORE XDP import.
+            // Otherwise Qoppa converts plain surnames into XHTML strings
+            // inside the XFA datasets, which Acrobat displays as literal XML.
+            if (paidCicc) {
+                disableRichSurname(document,
+                    "IMM_5476[0].Page1[0].SectionA[0].familyName[0]");
+                disableRichSurname(document,
+                    "IMM_5476[0].Page1[0].SectionB[0].familyName[0]");
+            }
             document.importXDP(xdp.toString());
-            if (xdpFile.equals("fictional-appointing-paid-cicc.xdp")) {
-                // jPDFFields may synthesize malformed XHTML containing nested
-                // quotes in a Courier New style attribute for surname widgets.
-                // Use its documented rich-text setter on these TWO fixed
-                // fictional values, not raw PDF manipulation.
-                setFixedSurnameRichValue(document,
+            if (paidCicc) {
+                setPlainSurname(document,
                     "IMM_5476[0].Page1[0].SectionA[0].familyName[0]", "Sharma");
-                setFixedSurnameRichValue(document,
+                setPlainSurname(document,
                     "IMM_5476[0].Page1[0].SectionB[0].familyName[0]", "Kapoor");
                 // XFA import alone does not switch the PDF radio appearances.
                 // Use the vendor-supported radio-field API.
@@ -72,21 +78,35 @@ public final class QoppaImm5476Trial {
         }
     }
 
-    private static void setFixedSurnameRichValue(
-            PDFFields document, String fieldName, String expectedValue) throws Exception {
-        FormField generic = document.getField(fieldName);
+    private static void disableRichSurname(PDFFields document, String name)
+            throws Exception {
+        FormField generic = document.getField(name);
         if (!(generic instanceof TextField)) {
-            throw new IllegalStateException("Observed surname widget type changed: " + fieldName);
+            throw new IllegalStateException("Observed surname is not text: " + name);
         }
         TextField field = (TextField)generic;
-        if (!field.isRichText() || !expectedValue.equals(field.getValue())) {
-            throw new IllegalStateException("Observed rich surname not populated: " + fieldName);
+        if (!field.isRichText() || !"\u00a0".equals(field.getValue())) {
+            throw new IllegalStateException("Expected an empty original rich surname");
         }
-        String xhtml = "<body xmlns=\"http://www.w3.org/1999/xhtml\">"
-                + "<p><span>" + expectedValue + "</span></p></body>";
-        field.setRichValue(xhtml);
-        if (!xhtml.equals(field.getRichValue()) || !expectedValue.equals(field.getValue())) {
-            throw new IllegalStateException("Qoppa rich-text surname round-trip failed");
+        field.setFieldFlags(field.getFieldFlags() & ~TextField.FF_RICHTEXT);
+        if (field.isRichText()) {
+            throw new IllegalStateException("Cannot disable surname rich-text mode");
+        }
+    }
+
+    private static void setPlainSurname(
+            PDFFields document, String name, String value) throws Exception {
+        FormField generic = document.getField(name);
+        if (!(generic instanceof TextField)) {
+            throw new IllegalStateException("Surname widget type changed: " + name);
+        }
+        TextField field = (TextField)generic;
+        if (field.isRichText()) {
+            throw new IllegalStateException("Surname rich text was reenabled during import");
+        }
+        field.setValue(value);
+        if (!value.equals(field.getValue()) || field.getRichValue() != null) {
+            throw new IllegalStateException("Surname must contain plain text without XHTML");
         }
     }
 

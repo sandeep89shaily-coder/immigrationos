@@ -14,7 +14,7 @@ Applicant, representative, and supervising lawyer signatures, declaration dates,
 
 Using the vendor-published Qoppa jPDFFields v2022R1.20 evaluation SDK in Java 21 with the original uploaded PDF and the controlled fictional data produced a four-page output with SHA-256:
 
-30be713ed9e4a44615734d67bbd6f87ad1acdf99ef1ebb62099edf2a42e5ef34
+4bd1dff73932684a8db7777bb3333d764107a6450100408dd1f71dfc3714fa48
 
 An independent PyMuPDF/PDF/XFA review found:
 
@@ -29,7 +29,7 @@ An independent PyMuPDF/PDF/XFA review found:
 
 ## Discovered release blockers
 
-1. **Rich surname XHTML corrected using the vendor-supported API.** Raw XDP import originally generated nested unescaped quotes in the font-style attribute. Calling Qoppa TextField.setRichValue() on exactly the two fictional surname widgets after XDP import produced well-formed XHTML for both names; XFA data, visible widgets, two radio choices and original signed bytes still match. Acrobat compatibility is NOT yet established.
+1. **CRITICAL: Adobe Acrobat rejected the previously generated rich-text surname values.** A user's actual Acrobat screenshot on November 7, 2026 showed the literal text `<body xmlns=...><p><span>Sharma</span></p></body>` and the same for Kapoor, even though the XHTML parsed correctly and a separate renderer showed only the surnames. The former verifier incorrectly treated well-formed escaped XHTML stored as XFA text as success. This is now a permanent negative regression test. **New workaround under test:** Qoppa's native `setFieldFlags(... & ~TextField.FF_RICHTEXT)` runs on just the two originally rich-text surname fields **before** `importXDP`; afterwards, `setValue()` assigns plain names. Local output contains only scalar surname XFA values `Sharma` and `Kapoor`, `/V` matches, PDF `/RV` is absent, and the rich-text flag is off. This changes the two original field flags and therefore still requires Adobe acceptance testing; it is not an approved alteration to a government form.
 2. **Appearance dictionary issue.** pypdf.get_fields() fails with KeyError('/N') on the vendor output; another renderer can still display the form.
 3. **Adobe, usage rights, signatures and save/reopen remain untested.** Preserving signed bytes does not establish that Adobe accepts every Reader entitlement.
 4. **Vendor commercial licensing has not been verified.** Trial watermark output must not be supplied as a client-ready form.
@@ -48,10 +48,14 @@ Verify an output independently:
 
     python -m scripts.verify_imm5476_paid_cicc original.pdf output.pdf report.json
 
-The verifier checks 21 text fields, both radio groups, the unpaid-off state, XFA XML structure, original signed bytes and untouched signature fields. It fails the structural trial if XHTML is malformed, and still explicitly reports any PDF field-parser failures; **it never calls the output Adobe-verified, IRCC-validated, licensed or submit-ready**.
+The verifier checks 21 text fields, both radio groups, the unpaid-off state, XFA XML structure, original signed bytes and untouched signature fields. It now **rejects any escaped XHTML string even if that XHTML is well-formed** and requires plain scalar surname data, no `/RV`, and disabled rich-text flags for the two intentionally converted test widgets; it still explicitly reports PDF field-parser failures; **it never calls the output Adobe-verified, IRCC-validated, licensed or submit-ready**.
 
 ## Next hard acceptance criteria
 
-Have a current Windows Acrobat build open the vendor PDF, change an ordinary field, save under a new name, close and reopen. Check radio selection persists, no XML is shown, buttons behave as expected, and any usage-rights/signature warnings. The malformed surname XHTML has now been fixed through Qoppa's native API. Fix or independently clear the remaining PDF appearance dictionary issue, or choose another engine if Adobe rejects the output. Then map and test all remaining operation/conditional branches, connect only verified case facts, obtain commercial SaaS licensing, and complete an RCIC legal workflow review.
+Have a current Windows Acrobat build open the vendor PDF, change an ordinary field, save under a new name, close and reopen. Check radio selection persists, no XML is shown, buttons behave as expected, and any usage-rights/signature warnings. The earlier well-formed XHTML approach FAILED in Adobe Acrobat. A new Qoppa-native plain-text-before-import test eliminates XML-as-text but is not yet Adobe-confirmed. Fix or independently clear the remaining PDF appearance dictionary issue, or choose another engine if Adobe rejects the new output. Then map and test all remaining operation/conditional branches, connect only verified case facts, obtain commercial SaaS licensing, and complete an RCIC legal workflow review.
 
 **Production flags remain false: official_pdf_autofill_supported, official_ircc_validation_verified, submission_supported.**
+
+## New experimental native-plain Qoppa output
+
+The exact official blank and fixed fictional test XDP were processed locally with jPDFFields v2022R1.20 and the revised adapter. Independent output SHA-256: `4bd1dff73932684a8db7777bb3333d764107a6450100408dd1f71dfc3714fa48` (2,157,753 bytes). Check results: 21/21 scalar text fields, 2/2 appointment radio selections, original four pages, complete XDP packet parse, signed-byte prefix unchanged, signatures blank, and both surnames represented with plain XFA scalar data and without `/RV` in the PDF fields. `pypdf.get_fields()` still reports a `KeyError` on an unrelated Qoppa appearance dictionary. **Adobe save/reopen is untested; official validated form count remains zero.**
