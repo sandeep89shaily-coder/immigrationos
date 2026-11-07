@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.access import OrgAccess, READ_ROLES, allow, get_org_access
 from app.db import get_db
 from app.form_mapping import FormMappingBlocked, resolve_verified_form_fields
+from app.imm5476_field_validation import plausible_observed_value
 from app.form_workflow_profiles import PDF_URL, REVIEWED_ON, VERSION
 from app.imm5476_official_poc import SOURCE_SHA256
 from app.imm5476_paid_cicc_poc import TEXT_PATHS, full_pdf_name
@@ -68,7 +69,7 @@ def scan_status_by_document(db: Session, org_id: UUID, case_id: UUID) -> dict[UU
 
 
 def _field_status(
-    candidates: list[CaseFact],
+    key: str, candidates: list[CaseFact],
     documents: dict[UUID, CaseDocument],
     scan_status: dict[UUID, str],
 ) -> dict:
@@ -95,6 +96,8 @@ def _field_status(
         field["status"] = "missing_case_document"
     elif any(scan_status.get(f.document_id) != "cleared" for f in live):
         field["status"] = "source_scan_not_cleared"
+    elif not plausible_observed_value(key, next(iter(values))):
+        field["status"] = "invalid_evidence_value"
     else:
         field.update({
             "status": "verified_source_value",
@@ -121,7 +124,7 @@ def build_preview(
     fields = []
     for key, canonical_path in CANONICAL_FIELDS.items():
         matched = [f for f in scope_facts if f.field_path == canonical_path]
-        state = _field_status(matched, docs, scan_status)
+        state = _field_status(key, matched, docs, scan_status)
         fields.append({
             "key": key,
             "canonical_path": canonical_path,
