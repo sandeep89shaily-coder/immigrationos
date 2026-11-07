@@ -52,6 +52,14 @@ def synthetic_blank():
     ])
     writer._root_object[NameObject("/Perms")] = DictionaryObject({
         NameObject("/UR3"): NameObject("/SyntheticTestOnly")})
+    for page in writer.pages:
+        for ref in page.get("/Annots", []):
+            annot = ref.get_object()
+            if str(annot.get("/T", "")) == "familyName[0]":
+                annot[NameObject("/RV")] = TextStringObject(
+                    '<body xmlns="http://www.w3.org/1999/xhtml" '
+                    'xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/">'
+                    '<p><span style="xfa-spacerun:yes">&#xa0;</span></p></body>')
     result = BytesIO()
     writer.write(result)
     return result.getvalue()
@@ -84,6 +92,12 @@ def test_incremental_pdf_preserves_original_and_both_form_layers(tmp_path, monke
     xml = poc._parse_xml(packet)
     assert poc._xfa_leaf(xml, poc._FIELDS["applicant_given"].xfa_path).text == "Aarav"
     assert poc._xfa_leaf(xml, poc._FIELDS["representative_family"].xfa_path).text == "Kapoor"
+    for page in read.pages:
+        for ref in page.get("/Annots", []):
+            annot = ref.get_object()
+            if str(annot.get("/V", "")) in ("Sharma", "Kapoor"):
+                rich = ET.fromstring(str(annot["/RV"]))
+                assert "".join(rich.itertext()) == str(annot["/V"])
     with pytest.raises(poc.IMM5476ExperimentBlocked, match="overwrit"):
         poc.generate_fictional_imm5476(blank, output)
 
