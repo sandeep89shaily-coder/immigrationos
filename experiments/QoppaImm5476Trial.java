@@ -1,13 +1,23 @@
 // Evaluation-only Qoppa jPDFFields XDP importer. No real applicant input.
+// Exercises SDK-native radio setters: XFA 1 <=> AcroForm option/on-state 0.
 import com.qoppa.pdfFields.PDFFields;
+import com.qoppa.pdf.form.FormField;
+import com.qoppa.pdf.form.RadioButtonGroupField;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.Set;
 
 public final class QoppaImm5476Trial {
     private static final String APPROVED_SHA =
         "aca5c476b93d1c496b1afbc2cfe843499e852e31dcf0c192153bd01f8d6c56c4";
+    private static final String APPOINTMENT =
+        "IMM_5476[0].Page1[0].RadioButtonList[0]";
+    private static final String UNPAID =
+        "IMM_5476[0].Page1[0].SectionB[0].question6[0].questionI[0].uncompensated[0]";
+    private static final String PAID_CICC =
+        "IMM_5476[0].Page1[0].SectionB[0].question6[0].questionII[0].compensated[0]";
 
     public static void main(String[] args) throws Exception {
         if (args.length != 3) {
@@ -26,14 +36,48 @@ public final class QoppaImm5476Trial {
                          .digest(original)).equals(APPROVED_SHA)) {
             throw new IllegalArgumentException("Authentic IMM5476 SHA-256 mismatch");
         }
-        if (!xdp.getFileName().toString().equals("fictional-scalar.xdp")
-                && !xdp.getFileName().toString().equals("fictional-rich.xdp")) {
+        String xdpFile = xdp.getFileName().toString();
+        if (!Set.of("fictional-scalar.xdp", "fictional-rich.xdp",
+                    "fictional-appointing-paid-cicc.xdp").contains(xdpFile)) {
             throw new IllegalArgumentException("Only fixed fictional test inputs allowed");
         }
         PDFFields document = new PDFFields(input.toString(), null);
-        document.importXDP(xdp.toString());
-        document.saveDocument(output.toString());
-        System.out.println("Qoppa output saved: " + output.getFileName()
-            + " bytes=" + Files.size(output) + " (unvalidated, trial only)");
+        try {
+            document.importXDP(xdp.toString());
+            if (xdpFile.equals("fictional-appointing-paid-cicc.xdp")) {
+                // XFA import alone does not switch this PDF's AcroForm radio
+                // appearances. Use the vendor-supported radio-field API.
+                selectFirstOption(document, APPOINTMENT);
+                selectFirstOption(document, PAID_CICC);
+                FormField unpaid = document.getField(UNPAID);
+                if (!(unpaid instanceof RadioButtonGroupField)
+                    || !((RadioButtonGroupField)unpaid).getValue().equals("Off")) {
+                    throw new IllegalStateException("Unrelated unpaid group selected");
+                }
+            }
+            document.saveDocument(output.toString());
+            System.out.println("Qoppa fictional PDF saved: " + output.getFileName()
+                + " bytes=" + Files.size(output) + " (unvalidated trial only)");
+        } finally {
+            document.close();
+        }
+    }
+
+    private static void selectFirstOption(PDFFields document, String name) throws Exception {
+        FormField field = document.getField(name);
+        if (!(field instanceof RadioButtonGroupField)) {
+            throw new IllegalStateException("Missing official radio group: " + name);
+        }
+        RadioButtonGroupField radio = (RadioButtonGroupField)field;
+        if (radio.getOnValues().isEmpty() || radio.getOptions().isEmpty()
+            || !radio.getOnValues().get(0).equals("0")
+            || !radio.getOptions().get(0).equals("1")
+            || !radio.getValue().equals("Off")) {
+            throw new IllegalStateException("Official radio options changed: " + name);
+        }
+        radio.setValue("0");
+        if (!radio.getValue().equals("0") || !radio.getValueFromOptions().equals("1")) {
+            throw new IllegalStateException("Radio field failed SDK roundtrip: " + name);
+        }
     }
 }
