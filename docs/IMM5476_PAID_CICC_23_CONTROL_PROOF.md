@@ -14,7 +14,7 @@ Applicant, representative, and supervising lawyer signatures, declaration dates,
 
 Using the vendor-published Qoppa jPDFFields v2022R1.20 evaluation SDK in Java 21 with the original uploaded PDF and the controlled fictional data produced a four-page output with SHA-256:
 
-2834a1d78672c643105d7447d10950f10081a880e973e7f07398a038e852a6f7
+30be713ed9e4a44615734d67bbd6f87ad1acdf99ef1ebb62099edf2a42e5ef34
 
 An independent PyMuPDF/PDF/XFA review found:
 
@@ -29,7 +29,7 @@ An independent PyMuPDF/PDF/XFA review found:
 
 ## Discovered release blockers
 
-1. **Vendor embedded rich-text XHTML is malformed.** The two surname XML strings contain invalid quotation marks inside the font-style attribute. Reading the text and displaying it in Poppler does not establish Adobe compatibility.
+1. **Rich surname XHTML corrected using the vendor-supported API.** Raw XDP import originally generated nested unescaped quotes in the font-style attribute. Calling Qoppa TextField.setRichValue() on exactly the two fictional surname widgets after XDP import produced well-formed XHTML for both names; XFA data, visible widgets, two radio choices and original signed bytes still match. Acrobat compatibility is NOT yet established.
 2. **Appearance dictionary issue.** pypdf.get_fields() fails with KeyError('/N') on the vendor output; another renderer can still display the form.
 3. **Adobe, usage rights, signatures and save/reopen remain untested.** Preserving signed bytes does not establish that Adobe accepts every Reader entitlement.
 4. **Vendor commercial licensing has not been verified.** Trial watermark output must not be supplied as a client-ready form.
@@ -48,10 +48,10 @@ Verify an output independently:
 
     python -m scripts.verify_imm5476_paid_cicc original.pdf output.pdf report.json
 
-The verifier checks 21 text fields, both radio groups, the unpaid-off state, XFA XML structure, original signed bytes and untouched signature fields. It explicitly reports malformed XHTML and PDF field-parser failures; **it never calls the output Adobe-verified, IRCC-validated, licensed or submit-ready**.
+The verifier checks 21 text fields, both radio groups, the unpaid-off state, XFA XML structure, original signed bytes and untouched signature fields. It fails the structural trial if XHTML is malformed, and still explicitly reports any PDF field-parser failures; **it never calls the output Adobe-verified, IRCC-validated, licensed or submit-ready**.
 
 ## Next hard acceptance criteria
 
-Have a current Windows Acrobat build open the vendor PDF, change an ordinary field, save under a new name, close and reopen. Check radio selection persists, no XML is shown, buttons behave as expected, and any usage-rights/signature warnings. Fix both vendor markup and PDF appearance structure or choose a different engine. Then map and test all remaining operation/conditional branches, connect only verified case facts, obtain commercial SaaS licensing, and complete an RCIC legal workflow review.
+Have a current Windows Acrobat build open the vendor PDF, change an ordinary field, save under a new name, close and reopen. Check radio selection persists, no XML is shown, buttons behave as expected, and any usage-rights/signature warnings. The malformed surname XHTML has now been fixed through Qoppa's native API. Fix or independently clear the remaining PDF appearance dictionary issue, or choose another engine if Adobe rejects the output. Then map and test all remaining operation/conditional branches, connect only verified case facts, obtain commercial SaaS licensing, and complete an RCIC legal workflow review.
 
 **Production flags remain false: official_pdf_autofill_supported, official_ircc_validation_verified, submission_supported.**
