@@ -16,6 +16,7 @@ from app.access import OrgAccess, READ_ROLES, allow, get_org_access
 from app.db import get_db
 from app.imm5476_case_preview import _field_status, scan_status_by_document
 from app.ircc_registry import REGISTRY, ObservedForm, source_metadata
+from app.form_manifest import MANIFESTS, expand_manifest
 from app.models import Case, CaseDocument, CaseFact, CaseIssue
 
 router = APIRouter(prefix="/api/v1/orgs/{org_id}/ircc", tags=["ircc-reviewed-evidence-coverage"])
@@ -38,14 +39,44 @@ def reviewed_subset_report(*, source: ObservedForm, case: Case,
                         if d.org_id == case.org_id and d.case_id == case.id}
     scoped_facts = [f for f in facts
                     if f.org_id == case.org_id and f.case_id == case.id]
+    manifest = MANIFESTS[source.code]
+    if (manifest.form_revision != source.revision_label
+            or manifest.filing_context != source.filing_context):
+        raise ValueError("Manifest/source revision mismatch")
+    # Only cleared, uniquely reviewed facts can determine conditional paths.
+    # This initial live manifest has no condition rules or repeated sections.
+    # A future conditional manifest must never assume unknown == false.
+    verified_values = {}
+    for section in manifest.sections:
+        for field in section.fields:
+            selected = [f for f in scoped_facts if f.field_path == field.canonical_path]
+            state = _field_status(FORMAT_KEYS.get(field.canonical_path, field.canonical_path),
+                                  selected, scoped_documents, scan_status)
+            if state["status"] == "verified_source_value":
+                verified_values[field.canonical_path] = state["value"]
+    expanded = expand_manifest(manifest, verified_values)
     fields = []
-    for label, canonical in source.preview_fields:
-        selected = [f for f in scoped_facts if f.field_path == canonical]
-        state = _field_status(FORMAT_KEYS.get(canonical, canonical),
-                              selected, scoped_documents, scan_status)
-        fields.append({"label": label, "canonical_path": canonical, **state})
+    for section in expanded:
+        for field in section["fields"]:
+            selected = [f for f in scoped_facts
+                        if f.field_path == field["canonical_path"]]
+            state = _field_status(
+                FORMAT_KEYS.get(field["canonical_path"], field["canonical_path"]),
+                selected, scoped_documents, scan_status)
+            if field["condition_state"] != "active":
+                # Never reveal or count data from an inactive or unresolved branch.
+                state = {"status": "inactive_condition" if
+                         field["condition_state"] == "inactive" else "unresolved_condition",
+                         "value": None, "evidence_ids": [], "document_ids": [],
+                         "source_hashes": []}
+            fields.append({
+                "label": field["label"], "canonical_path": field["canonical_path"],
+                "condition_state": field["condition_state"], **state})
+
 
     verified = sum(f["status"] == "verified_source_value" for f in fields)
+    applicable = [f for f in fields if f["condition_state"] != "inactive"]
+    unresolved_sections = any(x["state"].startswith("unresolved") for x in expanded)
     unsafe_states = {"conflicting_evidence", "unreviewed_evidence",
                      "invalid_evidence_value", "missing_case_document",
                      "source_scan_not_cleared"}
@@ -58,7 +89,9 @@ def reviewed_subset_report(*, source: ObservedForm, case: Case,
         blockers.append("source_review_stale")
     if any(f["status"] in unsafe_states for f in fields):
         blockers.append("unresolved_or_unsafe_evidence")
-    if verified != len(fields):
+    if any(f["status"] == "unresolved_condition" for f in fields) or unresolved_sections:
+        blockers.append("conditional_applicability_unresolved")
+    if verified != len(applicable) or unresolved_sections:
         blockers.append("internal_preview_fields_unresolved")
     blockers += ["complete_form_mapping_unverified",
                  "official_pdf_validation_unverified",
@@ -67,12 +100,16 @@ def reviewed_subset_report(*, source: ObservedForm, case: Case,
         **meta,
         "case_id": str(case.id),
         "schema_version": SCHEMA_VERSION,
+        "manifest_version": manifest.manifest_version,
+        "manifest_sha256": manifest.digest,
+        "manifest_sections": expanded,
         "fields": fields,
         "internal_preview_field_count": len(fields),
         "verified_preview_field_count": verified,
         "missing_preview_field_count": sum(
             f["status"] == "missing_evidence" for f in fields),
-        "verified_internal_subset": verified == len(fields) and not (
+        "verified_internal_subset": verified == len(applicable) and not unresolved_sections
+            and all(f["status"] != "unresolved_condition" for f in fields) and not (
             case.status == "closed" or open_issue_count
             or meta["source_recheck_required"]),
         "blockers": sorted(set(blockers)),
