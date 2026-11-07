@@ -86,7 +86,7 @@ with engine.connect() as conn:
                          "staff_invitations", "case_application_packages", "package_form_copies",
                          "applicant_profiles", "applicant_family_members", "case_answer_drafts",
                          "applicant_histories", "requirement_decisions", "requirement_document_reviews",
-                         "form_preparation_packets"]
+                         "form_preparation_packets", "imm5476_review_packets"]
         policies = conn.execute(text("""SELECT relname, relrowsecurity, relforcerowsecurity
             FROM pg_class WHERE relname = ANY(:tables)"""), {"tables": tenant_tables}).all()
         assert len(policies) == len(tenant_tables), "RLS FAILED: missing tables"
@@ -102,6 +102,14 @@ with engine.connect() as conn:
             has_table_privilege(current_user, 'evidence_review_snapshots', 'DELETE')""")).one()
         assert snapshot_privileges == (True, True, False, False), \
             "RLS FAILED: review history must be append-only"
+
+        imm5476_privileges = conn.execute(text("""SELECT
+            has_table_privilege(current_user, 'imm5476_review_packets', 'SELECT'),
+            has_table_privilege(current_user, 'imm5476_review_packets', 'INSERT'),
+            has_table_privilege(current_user, 'imm5476_review_packets', 'UPDATE'),
+            has_table_privilege(current_user, 'imm5476_review_packets', 'DELETE')""")).one()
+        assert imm5476_privileges == (True, True, False, False), \
+            "RLS FAILED: IMM5476 review checkpoint history must be append-only"
 
         crm_privileges = conn.execute(text("""SELECT
             has_table_privilege(current_user, 'crm_consultation_agreements', 'UPDATE'),
