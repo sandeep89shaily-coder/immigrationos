@@ -10,10 +10,10 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
-from app import imm5476_packets as review
 from app.auth import Principal, get_principal
 from app.db import engine
 from app.main import app
+from app import imm5476_packets as review
 
 assert "MIGRATION_DATABASE_URL" in os.environ
 migration_engine = create_engine(os.environ["MIGRATION_DATABASE_URL"])
@@ -87,10 +87,6 @@ try:
             # The preview uses the actual unmocked scan map, so its value is
             # not accepted yet; use the independently recomputed protected
             # checkpoint hash in this scanner-mocked synthetic smoke.
-            with engine.connect() as app_connection:
-                # No arbitrary cross-tenant reads; endpoint computes the actual
-                # strict preview under its current principal/tenant context.
-                pass
             # The preview's scan function is patched only for this synthetic
             # test, exactly as a cleared scan disposition would be recorded.
             from app import imm5476_case_preview as preview_module
