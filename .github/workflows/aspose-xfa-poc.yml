@@ -1,0 +1,87 @@
+name: Aspose native XFA compatibility (synthetic data, experimental)
+on:
+  pull_request:
+    paths:
+      - "scripts/evaluate_aspose_xfa.py"
+      - "tests/test_aspose_xfa_candidate.py"
+      - ".github/workflows/aspose-xfa-poc.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  commercial-xfa-evaluation:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 18
+    env:
+      ENVIRONMENT: development
+      DATABASE_URL: sqlite+pysqlite:///./research-xfa.db
+      AUTH_ISSUER: https://issuer.example.invalid/realm
+      AUTH_AUDIENCE: immigrationos-api
+      AUTH_JWKS_URL: https://issuer.example.invalid/jwks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install isolated test dependencies and licensed-engine trial package
+        run: |
+          python -m pip install -e '.[test]'
+          python -m pip install 'aspose-pdf==26.9.0'
+      - name: Import commercial vendor engine
+        run: python -c 'import aspose.pdf as ap; print("Aspose trial module successfully imported")'
+      - name: Download pinned public IMM5476 blank from official IRCC HTTPS
+        run: |
+          mkdir -p trial-out
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError, URLError
+          from app.form_workflow_profiles import PDF_URL
+          from app.imm5476_official_poc import SOURCE_SHA256
+          out=Path(os.environ["RUNNER_TEMP"]) / "imm5476-official-pinned.pdf"
+          report={"downloaded":False,"original_template_bytes_persisted":False,
+                  "sha256_matches_uploaded_official_blank":False}
+          for agent in ("ImmigrationOS-BlankFormResearch/0.1",
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36"):
+              try:
+                  req=Request(PDF_URL,headers={"User-Agent":agent,"Accept":"application/pdf"})
+                  with urlopen(req,timeout=20) as response:
+                      body=response.read(12*1024*1024+1)
+                  digest=hashlib.sha256(body).hexdigest()
+                  report["downloaded"]=body.startswith(b"%PDF-")
+                  report["bytes"]=len(body)
+                  report["sha256_matches_uploaded_official_blank"]=digest == SOURCE_SHA256
+                  if report["downloaded"] and report["sha256_matches_uploaded_official_blank"]:
+                      out.write_bytes(body)
+                      report["source_path"] = "runner_temp"
+                      break
+                  report["failure_type"]="source_changed_or_not_pdf"
+              except (OSError, ValueError) as exc:
+                  report["failure_type"]=type(exc).__name__
+                  if isinstance(exc, HTTPError):
+                      report["http_status"]=exc.code
+          Path("trial-out/source.json").write_text(json.dumps(report,indent=2))
+          print(json.dumps(report,indent=2))
+          if not out.exists():
+              raise SystemExit("Original PDF unavailable/changed; do not attempt trial against alternate bytes")
+          PY
+      - name: Attempt actual form autofill with native Aspose XFA API
+        run: |
+          python -m scripts.evaluate_aspose_xfa \
+            --input "$RUNNER_TEMP/imm5476-official-pinned.pdf" \
+            --output trial-out/IMM5476-ASPOSE-FICTIONAL-UNVALIDATED.pdf \
+            --report trial-out/aspose-evaluation.json
+      - name: Archive structural diagnostics and fictional watermarked trial output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: imm5476-aspose-xfa-trial
+          path: trial-out/
+          retention-days: 7
