@@ -40,9 +40,15 @@ def synthetic_blank():
     ds.set_data(ET.tostring(xfa_root, encoding="utf-8", xml_declaration=True))
     template = DecodedStreamObject()
     template.set_data(b'<template xmlns="http://www.xfa.org/schema/xfa-template/3.6/"/>')
+    preamble = DecodedStreamObject()
+    preamble.set_data(b'<?xml version="1.0" encoding="UTF-8"?>\\n<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/">')
+    postamble = DecodedStreamObject()
+    postamble.set_data(b'</xdp:xdp>')
     acro[NameObject("/XFA")] = ArrayObject([
+        TextStringObject("preamble"), writer._add_object(preamble),
         TextStringObject("template"), writer._add_object(template),
         TextStringObject("datasets"), writer._add_object(ds),
+        TextStringObject("postamble"), writer._add_object(postamble),
     ])
     writer._root_object[NameObject("/Perms")] = DictionaryObject({
         NameObject("/UR3"): NameObject("/SyntheticTestOnly")})
@@ -110,5 +116,5 @@ def test_concatenated_xfa_document_has_one_xml_declaration(tmp_path, monkeypatch
     xfa = read.trailer["/Root"]["/AcroForm"].get_object()["/XFA"]
     joined = b"".join(xfa[i+1].get_object().get_data() for i in range(0, len(xfa), 2))
     parsed = poc._parse_xml(joined)
-    assert parsed.tag.endswith("xdp") or parsed.tag.endswith("datasets")
+    assert parsed.tag.endswith("xdp")
     assert joined.count(b"<?xml") <= 1
