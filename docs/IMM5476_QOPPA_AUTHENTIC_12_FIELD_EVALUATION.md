@@ -30,14 +30,16 @@ Independent **PyMuPDF widget reads verified 12/12 values**, including applicant 
 **Important structural warning:** `pypdf.get_fields()` raises `KeyError('/N')` for Qoppa's output. We isolated it to a `/Btn` field at
 `IMM_5476[0].Page1[0].disclaimer[0].websitelink[0]` whose `/AP` becomes an empty dictionary; the same original field did not have that problem. PyMuPDF still enumerates 12/12 filled text widgets. Acrobat may handle this differently; it is a release blocker pending real Adobe testing.
 
-**Radio button test:** the top appointment-choice group and the paid-CICC group were assigned the source-template's own observed XFA item value `1`, not a guessed PDF on-state. Qoppa preserved the values in XFA datasets, but the associated AcroForm radio widgets stayed `Off`, and independent rendering showed no circles selected. **Radio and conditional controls have NOT passed.** The test must not be used as proof of a completed appointment workflow.
+**Radio control progression (verified locally):** XDP import alone does not update PDF radio appearances: the XFA dataset can contain `1` while all associated AcroForm widgets remain `Off`. We then used **Qoppa's own documented `RadioButtonGroupField.setValue("0")`** API after XDP import, rather than patching raw PDF objects. Qoppa `getOnValues()` maps the first widget on-state `0` to its first `getOptions()` item `1`. In a new fixed, fictional **12-text + two-radio** test, we set the XFA datasets to `RadioButtonList=1`, `questionII.compensated=1` and left `questionI.uncompensated` blank. The vendor's radio setter selected only those two corresponding AcroForm groups: `["0","Off","Off","Off","Off"]` for the main operation, `["0","Off","Off"]` for compensated/CICC, and **all five unpaid widgets stayed Off**. PyMuPDF readbacks and Poppler page renders confirm the two selections; all **12 text values** still match. The PDF remains four pages; exact original PDF byte prefix and original /UR3 signed byte ranges remain unchanged.
+
+Combined evaluation PDF: SHA-256 `39ffd8a7e04c398601969f0c3e172fdcf15938831dafe20fba92866b1f6ba0ff`, **2,157,908 bytes**. Produced using fixed fictional values on the authentic uploaded source. Neither the PDF nor the radio changes have been opened in Adobe Acrobat. **Conditional logic, all other operations, form save/reopen and signature-validity checks remain unverified.**
 
 The evaluation PDF is watermarked `Qoppa Software - For Evaluation Only` and contains a large diagonal `Qoppa Software` watermark. Neither trial PDF is appropriate for client use, signatures, filing or IRCC submission.
 
 ## Decision and next gates
 
 1. **Adobe compatibility:** open the scalar 12-field output in Windows Acrobat; check that names render without raw XML, form remains interactive, and save/reopen works. Compare original and output's security/usage-rights warnings.
-2. **Radio control mapping:** independently test XFA choices and Acrobat recalculation; do not merely write `0` or `1` into XFA and assume the UI selected it. Verify proper top-level operation, representative type and conditional fields.
+2. **Radio control mapping:** XFA + widget agreement passed for two fixed selections; test actual Acrobat recalculation, default/other groups, operation alternatives and conditional visibility. Do not infer completeness.
 3. **Form completeness:** map all form operations, repeated sections, signatures and required fields with professional review.
 4. **SDK license:** request written confirmation from Qoppa for a commercial multi-tenant RCIC SaaS and a non-watermarked license. Ensure SDK and end-user PDF licensing respects vendor terms.
 5. **Negative regression:** confirm Adobe save/reopen, Reset and Print buttons and any form-specific behaviors; `/UR3` marker/byte preservation alone is insufficient.
@@ -45,7 +47,7 @@ The evaluation PDF is watermarked `Qoppa Software - For Evaluation Only` and con
 
 ## Reproducibility
 
-The experimental CI workflow `.github/workflows/imm5476-xdp-engine-trial.yml` downloads the public blank when available, enforces its SHA-256, generates both scalar and rich XDP files using `scripts/imm5476_xdp_vendor_trial.py`, and tests native vendor implementations. CI's official-source download is temporarily blocked by Canada.ca read timeouts; it must not be interpreted as a vendor failure. A private local test against the exact uploaded source was therefore performed, not a different government form.
+The experimental CI workflow `.github/workflows/imm5476-xdp-engine-trial.yml` downloads the public blank when available, enforces its SHA-256, generates scalar, rich and fictional radio XDP files using `scripts/imm5476_xdp_vendor_trial.py`, and tests native vendor implementations. CI's official-source download is temporarily blocked by Canada.ca read timeouts; it must not be interpreted as a vendor failure. A private local test against the exact uploaded source was therefore performed, not a different government form.
 
 Compare to prior Aspose output: Aspose successfully filled four test values and rendered names, but performed a full PDF rewrite changing the signed original bytes. Qoppa's incremental output preserved the original signed bytes while leaving UI/control and structural issues to resolve.
 
