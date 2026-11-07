@@ -243,6 +243,8 @@ def generate_fictional_imm5476(blank_pdf: Path, output_pdf: Path) -> dict:
             "xfa_field_roundtrip_verified": True,
             "adobe_reader_validation_verified": False,
             "signature_validation_verified": False,
+            "all_fields_visually_verified": False,
+            "rich_text_surnames_non_adobe_visibility_unverified": True,
             "ready_for_submission": False,
             "warning": "Synthetic partial prefill only. Representative classification, authorization, signatures and Adobe Reader review remain outstanding.",
         }
