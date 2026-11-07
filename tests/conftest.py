@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
 from app.auth import Principal, get_principal
-from app import portal_models, intake_models, crm_models, engagement_models, case_scope_models, staff_models, package_models, applicant_models, applicant_history_models, requirement_models  # register models for tests
+from app import portal_models, intake_models, crm_models, engagement_models, case_scope_models, staff_models, package_models, applicant_models, applicant_history_models, requirement_models, form_preparation_models  # register models for tests
 from app.db import Base, engine, get_db
 from app.main import app
 
