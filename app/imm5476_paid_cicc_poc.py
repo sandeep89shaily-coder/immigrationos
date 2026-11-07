@@ -121,6 +121,8 @@ def populate_fictional_dataset(root: ET.Element) -> None:
     """Set only observed text and two appointment controls; do not touch declarations."""
     for key, path in TEXT_PATHS.items():
         target = node(root, path)
+        if (target.text or "").strip():
+            raise ValueError("Source must be blank: " + key)
         if key.endswith("_family"):
             if len(target) != 1 or _local(target[0].tag) != "body":
                 raise ValueError("Unexpected rich-text surname source")
@@ -128,8 +130,6 @@ def populate_fictional_dataset(root: ET.Element) -> None:
                 target.remove(child)
         elif len(target):
             raise ValueError("Unexpected nested text field structure")
-        if (target.text or "").strip():
-            raise ValueError("Source must be blank: " + key)
         target.text = FICTIONAL_VALUES[key]
     for path in RADIO_PATHS.values():
         target = node(root, path)
@@ -146,15 +146,18 @@ def populate_fictional_dataset(root: ET.Element) -> None:
 
 
 def serialize_vendor_safe_xdp(dataset: ET.Element) -> bytes:
-    xdp = ET.Element(f"{{{_XDP}}}xdp")
-    xdp.append(dataset)
-    xml = ET.tostring(xdp, encoding="utf-8", xml_declaration=True)
-    # The XFA SDK exports the datasets packet without its enclosing XDP.
-    # Namespace declarations MUST be on the dataset packet itself; otherwise
-    # the generated PDF has an unbound xfa: prefix and Acrobat may reject it.
-    if xml.count(_XDP_HEADER) != 1:
-        raise ValueError("XDP namespace layout changed")
-    xml = xml.replace(_XDP_HEADER, _XDP_DATASET_LOCAL_NS)
+    # Serialize the XFA dataset packet *in isolation* so its xmlns:xfa and
+    # xmlns:html declarations are physically on the packet. Vendor SDKs can
+    # re-export that packet without inheriting namespaces from the XDP root.
+    if dataset.tag != f"{{{_XFA}}}datasets":
+        raise ValueError("Incorrect XFA dataset root")
+    dataset_xml = ET.tostring(dataset, encoding="utf-8")
+    if not dataset_xml.startswith(b"<xfa:datasets") or (
+            b'xmlns:xfa="' + _XFA.encode("ascii") + b'"' not in dataset_xml.split(b">", 1)[0]):
+        raise ValueError("Dataset namespace declaration missing")
+    xml = (b'<?xml version="1.0" encoding="UTF-8"?>\n'
+           b'<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/">'
+           + dataset_xml + b'</xdp:xdp>')
     parsed = _parse_xml(xml)
     if parsed.tag != f"{{{_XDP}}}xdp":
         raise ValueError("Expected xdp document root")
