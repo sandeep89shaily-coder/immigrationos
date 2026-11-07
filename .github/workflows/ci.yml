@@ -86,6 +86,12 @@ jobs:
   official-imm5476-readonly-probe:
     runs-on: ubuntu-latest
     timeout-minutes: 8
+    env:
+      ENVIRONMENT: development
+      DATABASE_URL: sqlite+pysqlite:///./research-observation.db
+      AUTH_ISSUER: https://issuer.example.invalid/realm
+      AUTH_AUDIENCE: immigrationos-api
+      AUTH_JWKS_URL: https://issuer.example.invalid/jwks
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
