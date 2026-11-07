@@ -14,12 +14,12 @@ from hashlib import sha256
 import os
 from pathlib import Path
 import re
-import html
 import shutil
 import tempfile
 import xml.etree.ElementTree as ET
 
 from pypdf import PdfReader
+from app.imm5476_plain_appearance import repair_family_appearances
 
 FORM_CODE = "IMM5476"
 REVISION = "11-2025"
@@ -190,22 +190,24 @@ def _verify_result(raw: bytes, output: bytes, original_template: bytes):
             raise IMM5476ExperimentBlocked("AcroForm round-trip mismatch for " + key)
         if _xfa_leaf(xfa_root, binding.xfa_path).text != SYNTHETIC_VALUES[key]:
             raise IMM5476ExperimentBlocked("XFA round-trip mismatch for " + key)
-        if key in {"applicant_family", "representative_family"}:
-            widgets = [
-                ref.get_object()
-                for page in saved.pages for ref in page.get("/Annots", [])
-                if str(ref.get_object().get("/T", "")).endswith("familyName[0]")
-                and str(ref.get_object().get("/V", "")) == SYNTHETIC_VALUES[key]
-            ]
+        if key in ("applicant_family", "representative_family"):
+            widgets = [ref.get_object() for page in saved.pages
+                       for ref in page.get("/Annots", [])
+                       if str(ref.get_object().get("/T", "")).endswith("familyName[0]")
+                       and str(ref.get_object().get("/V", "")) == SYNTHETIC_VALUES[key]]
             if len(widgets) != 1:
-                raise IMM5476ExperimentBlocked("Rich-text surname widget missing")
-            rich_xml = str(widgets[0].get("/RV", ""))
-            try:
-                rich_root = ET.fromstring(rich_xml)
-            except ET.ParseError as exc:
-                raise IMM5476ExperimentBlocked("Saved rich-text XHTML invalid") from exc
-            if "".join(rich_root.itertext()) != SYNTHETIC_VALUES[key]:
-                raise IMM5476ExperimentBlocked("Rich-text /RV and /V mismatch")
+                raise IMM5476ExperimentBlocked("Surname widget absent")
+            widget = widgets[0]
+            if widget.get("/RV") is not None or int(widget.get("/Ff", 0)) & (1 << 25):
+                raise IMM5476ExperimentBlocked("Unexpected rich-text PDF widget")
+            ap = widget.get("/AP", {}).get("/N")
+            if ap is None:
+                raise IMM5476ExperimentBlocked("Missing PDF appearance")
+            stream = ap.get_object().get_data()
+            literal = ("(" + SYNTHETIC_VALUES[key] + ") Tj").encode("ascii")
+            if stream.count(literal) != 1 or b"/Helv 9 Tf" not in stream:
+                raise IMM5476ExperimentBlocked("Surname appearance not generated")
+
 
 
 def generate_fictional_imm5476(blank_pdf: Path, output_pdf: Path) -> dict:
@@ -244,28 +246,23 @@ def generate_fictional_imm5476(blank_pdf: Path, output_pdf: Path) -> dict:
             pdf.update_stream(dataset_xref, patched_xml)
             completed = set()
             for page in pdf:
-                for widget in page.widgets() or []:
+                page_widgets = list(page.widgets() or [])
+                for widget in page_widgets:
                     for key, binding in _FIELDS.items():
                         if widget.field_name == binding.acroform_name:
                             if key in completed:
                                 raise IMM5476ExperimentBlocked("Duplicate form widget")
                             widget.field_value = SYNTHETIC_VALUES[key]
                             widget.update()
-                            if key in {"applicant_family", "representative_family"}:
-                                kind, rich_xml = pdf.xref_get_key(widget.xref, "RV")
-                                if kind != "string" or rich_xml.count("&#xa0;") != 1:
-                                    raise IMM5476ExperimentBlocked(
-                                        "Unexpected rich-text widget source")
-                                rich_xml = rich_xml.replace(
-                                    ' style="xfa-spacerun:yes"', "").replace(
-                                    "&#xa0;", html.escape(SYNTHETIC_VALUES[key]))
-                                try:
-                                    ET.fromstring(rich_xml)
-                                except ET.ParseError as exc:
-                                    raise IMM5476ExperimentBlocked(
-                                        "Invalid XHTML in rich-text field") from exc
-                                pdf.xref_set_key(widget.xref, "RV", fitz.get_pdf_str(rich_xml))
+                            if key in ("applicant_family", "representative_family"):
+                                widget.field_flags &= ~(1 << 25)
+                                widget.update()
+                                pdf.xref_set_key(widget.xref, "RV", "null")
                             completed.add(key)
+                if page.number == 0:
+                    repair_family_appearances(pdf, page,
+                        {w.field_name: w for w in page_widgets},
+                        _FIELDS, SYNTHETIC_VALUES, IMM5476ExperimentBlocked)
             if completed != set(_FIELDS):
                 raise IMM5476ExperimentBlocked("Some official PDF widgets were not found")
             pdf.saveIncr()
@@ -284,7 +281,7 @@ def generate_fictional_imm5476(blank_pdf: Path, output_pdf: Path) -> dict:
             "adobe_reader_validation_verified": False,
             "signature_validation_verified": False,
             "all_fields_visually_verified": False,
-            "rich_text_surnames_non_adobe_visibility_unverified": True,
+            "surname_appearance_independently_verified": True,
             "ready_for_submission": False,
             "warning": "Synthetic partial prefill only. Representative classification, authorization, signatures and Adobe Reader review remain outstanding.",
         }
