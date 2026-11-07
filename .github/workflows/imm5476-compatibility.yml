@@ -1,0 +1,47 @@
+name: Official IMM5476 compatibility observation (read-only)
+on:
+  pull_request:
+    paths:
+      - "app/xfa_probe.py"
+      - "app/form_template_inspector.py"
+      - "app/official_template_observation.py"
+      - "scripts/observe_imm5476_template.py"
+      - ".github/workflows/imm5476-compatibility.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  official-blank-inspection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install inspection dependencies
+        run: pip install -e .
+      - name: Fetch official public blank and inspect transiently
+        id: observe
+        continue-on-error: true
+        run: python -m scripts.observe_imm5476_template --output reports/imm5476-observation.json
+      - name: Publish non-personal structural findings in workflow log
+        if: always()
+        run: |
+          if [ -f reports/imm5476-observation.json ]; then
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path("reports/imm5476-observation.json").read_text())
+          print(json.dumps(report, indent=2, sort_keys=True))
+          PY
+          else
+            echo "No blank-form observation produced."
+          fi
+      - name: Archive observation (never official release authorization)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: imm5476-candidate-compatibility
+          path: reports/imm5476-observation.json
+          retention-days: 14
