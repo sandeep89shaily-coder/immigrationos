@@ -10,6 +10,7 @@ from io import BytesIO
 import re
 
 from pypdf import PdfReader
+from app.xfa_probe import probe_xfa, XfaProbeError
 
 MAX_TEMPLATE_BYTES = 12 * 1024 * 1024
 MAX_PAGES = 40
@@ -53,11 +54,16 @@ def inspect_pdf_template(raw: bytes) -> dict:
         root = _plain(reader.trailer["/Root"])
         acro = _plain(root.get("/AcroForm")) if root.get("/AcroForm") else None
         flags: list[str] = []
+        xfa_report = None
         if acro is None:
             flags.append("no_acroform")
         else:
             if "/XFA" in acro:
                 flags.append("xfa_present")
+                try:
+                    xfa_report = probe_xfa(acro["/XFA"])
+                except XfaProbeError:
+                    flags.append("xfa_structure_uninspectable")
             if "/AA" in acro:
                 flags.append("acroform_additional_actions")
         if "/OpenAction" in root or "/AA" in root:
@@ -135,6 +141,7 @@ def inspect_pdf_template(raw: bytes) -> dict:
             "field_count": len(fields),
             "field_type_counts": dict(sorted(type_counts.items())),
             "field_names": sorted(field_names),
+            "xfa_structure": xfa_report,
             "indicators": flags,
             "classification": classification,
             "candidate_for_static_adapter": classification == "static_acroform_candidate",

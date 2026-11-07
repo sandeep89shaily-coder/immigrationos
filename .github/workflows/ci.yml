@@ -82,3 +82,41 @@ jobs:
         run: DATABASE_URL="$RLS_APP_DATABASE_URL" python scripts/postgres_staff_smoke.py
       - name: Exercise study-permit application packages and form-copy integrity under PostgreSQL RLS
         run: MIGRATION_DATABASE_URL="$DATABASE_URL" DATABASE_URL="$RLS_APP_DATABASE_URL" python scripts/postgres_package_smoke.py
+
+  official-imm5476-readonly-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ENVIRONMENT: development
+      DATABASE_URL: sqlite+pysqlite:///./research-observation.db
+      AUTH_ISSUER: https://issuer.example.invalid/realm
+      AUTH_AUDIENCE: immigrationos-api
+      AUTH_JWKS_URL: https://issuer.example.invalid/jwks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -e .
+      - name: Download official blank document and inspect XFA (research only)
+        continue-on-error: true
+        run: python -m scripts.observe_imm5476_template --output reports/imm5476-observation.json
+      - name: Print public structural inspection result
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('reports/imm5476-observation.json')
+          if p.exists():
+              print(json.dumps(json.loads(p.read_text()), indent=2, sort_keys=True))
+          else:
+              print('No observation file generated.')
+          PY
+      - name: Archive public blank PDF observation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: imm5476-readonly-probe
+          path: reports/imm5476-observation.json
+          retention-days: 14
