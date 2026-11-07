@@ -105,8 +105,9 @@ def run_trial(input_path: Path, output_path: Path) -> dict:
         "adobe_reader_tested": False,
         "ready_for_submission": False,
     }
-    document = ap.Document(str(input_path))
-    try:
+    # Aspose's Python/.NET Document exposes no .dispose() method.
+    # Use the documented context-manager interface instead.
+    with ap.Document(str(input_path)) as document:
         xfa = document.form.xfa
         names = [str(name) for name in xfa.field_names]
         report["xfa_field_inventory_count"] = len(names)
@@ -121,8 +122,6 @@ def run_trial(input_path: Path, output_path: Path) -> dict:
         for key, vendor_name in selected.items():
             xfa[vendor_name] = SYNTHETIC_VALUES[key]
         document.save(str(output_path))
-    finally:
-        document.dispose()
 
     if not output_path.is_file() or not output_path.read_bytes().startswith(b"%PDF-"):
         report["status"] = "vendor_failed_to_save_pdf"
