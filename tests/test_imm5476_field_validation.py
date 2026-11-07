@@ -21,7 +21,7 @@ def test_invalid_syntax_fails_closed():
         ("applicant_dob", "2001-6-9"),
         ("applicant_dob", "2099-01-01"),
         ("applicant_email", "not-an-email"),
-        ("applicant_email", "a@example.test\\nother"),
+        ("applicant_email", "a@example.test\nother"),
         ("representative_email", "person at example.test"),
         ("uci", "12-34"),
         ("uci", "123456789"),
