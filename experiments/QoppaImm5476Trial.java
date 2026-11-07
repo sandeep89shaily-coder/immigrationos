@@ -3,6 +3,7 @@
 import com.qoppa.pdfFields.PDFFields;
 import com.qoppa.pdf.form.FormField;
 import com.qoppa.pdf.form.RadioButtonGroupField;
+import com.qoppa.pdf.form.TextField;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -45,8 +46,16 @@ public final class QoppaImm5476Trial {
         try {
             document.importXDP(xdp.toString());
             if (xdpFile.equals("fictional-appointing-paid-cicc.xdp")) {
-                // XFA import alone does not switch this PDF's AcroForm radio
-                // appearances. Use the vendor-supported radio-field API.
+                // jPDFFields may synthesize malformed XHTML containing nested
+                // quotes in a Courier New style attribute for surname widgets.
+                // Use its documented rich-text setter on these TWO fixed
+                // fictional values, not raw PDF manipulation.
+                setFixedSurnameRichValue(document,
+                    "IMM_5476[0].Page1[0].SectionA[0].familyName[0]", "Sharma");
+                setFixedSurnameRichValue(document,
+                    "IMM_5476[0].Page1[0].SectionB[0].familyName[0]", "Kapoor");
+                // XFA import alone does not switch the PDF radio appearances.
+                // Use the vendor-supported radio-field API.
                 selectFirstOption(document, APPOINTMENT);
                 selectFirstOption(document, PAID_CICC);
                 FormField unpaid = document.getField(UNPAID);
@@ -60,6 +69,24 @@ public final class QoppaImm5476Trial {
                 + " bytes=" + Files.size(output) + " (unvalidated trial only)");
         } finally {
             document.close();
+        }
+    }
+
+    private static void setFixedSurnameRichValue(
+            PDFFields document, String fieldName, String expectedValue) throws Exception {
+        FormField generic = document.getField(fieldName);
+        if (!(generic instanceof TextField)) {
+            throw new IllegalStateException("Observed surname widget type changed: " + fieldName);
+        }
+        TextField field = (TextField)generic;
+        if (!field.isRichText() || !expectedValue.equals(field.getValue())) {
+            throw new IllegalStateException("Observed rich surname not populated: " + fieldName);
+        }
+        String xhtml = "<body xmlns=\"http://www.w3.org/1999/xhtml\">"
+                + "<p><span>" + expectedValue + "</span></p></body>";
+        field.setRichValue(xhtml);
+        if (!xhtml.equals(field.getRichValue()) || !expectedValue.equals(field.getValue())) {
+            throw new IllegalStateException("Qoppa rich-text surname round-trip failed");
         }
     }
 
