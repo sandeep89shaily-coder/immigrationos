@@ -90,13 +90,14 @@ def verify(blank: Path, filled: Path, report: Path) -> bool:
             xfa_values = {}
             for key in _KEYS:
                 name = _FIELDS[key].acroform_name
-                node = _xfa_leaf(root, _FIELDS[key].xfa_path)
-                # Scalar XFA data contains plain text under surname node.
+                # Scalar XFA has no XHTML descendant path. Do not try to
+                # resolve it until deciding which XDP encoding was saved.
                 if key.endswith("_family"):
                     parent = _xfa_leaf(root, _FIELDS[key].xfa_path[:-3])
-                    value = parent.text if len(parent) == 0 else node.text
+                    value = (parent.text if len(parent) == 0 else
+                             _xfa_leaf(root, _FIELDS[key].xfa_path).text)
                 else:
-                    value = node.text
+                    value = _xfa_leaf(root, _FIELDS[key].xfa_path).text
                 xfa_values[key] = value == SYNTHETIC_VALUES[key]
             result["xfa_matches"] = xfa_values
         except Exception as exc:
