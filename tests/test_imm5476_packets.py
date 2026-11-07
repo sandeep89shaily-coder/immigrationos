@@ -156,3 +156,23 @@ def test_closed_case_open_issue_unassigned_and_viewer_denials(api, monkeypatch):
         db.commit()
         _, issue_report = packets.current_snapshot(db, UUID(org), UUID(case))
     assert capture(client, endpoint, issue_report["snapshot_sha256"]).status_code == 409
+
+
+def test_invalid_reviewed_value_cannot_enter_checkpoint(api, monkeypatch):
+    client, _, factory = api
+    org, case, preview, endpoint = configured(api, "imm5476-pkt-bad-date")
+    doc_id = reviewed(api, org, case, fields=3)
+    monkeypatch.setattr(packets, "scan_status_by_document",
+                        lambda *args: {doc_id: "cleared"})
+    with factory() as db:
+        dob = db.query(CaseFact).filter(
+            CaseFact.case_id == UUID(case),
+            CaseFact.field_path == "identity.date_of_birth").one()
+        dob.value = "2099-13-99"
+        db.commit()
+        _, report = packets.current_snapshot(db, UUID(org), UUID(case))
+    assert report["verified_text_fields"] == 2
+    assert next(f for f in report["fields"] if f["key"] == "applicant_dob")["status"] == "invalid_evidence_value"
+    assert capture(client, endpoint, report["snapshot_sha256"]).status_code == 409
+    with factory() as db:
+        assert db.query(IMM5476ReviewPacket).count() == 0
