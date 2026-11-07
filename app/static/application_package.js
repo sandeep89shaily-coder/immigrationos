@@ -10,6 +10,10 @@ async function renderPackage(){
  S.activeRequirements=requirements;
  const prep=pkg.initialized?await api(q()+'/cases/'+encodeURIComponent(S.caseId)+'/form-preparation/preview'):null;
  S.activeFormPreparation=prep;
+ const hasRepresentativeForm=pkg.initialized&&pkg.forms.some(form=>form.code==='IMM5476');
+ const repPreview=hasRepresentativeForm?await api(
+   q()+'/cases/'+encodeURIComponent(S.caseId)+'/ircc/IMM5476/preparation'):null;
+ S.activeImm5476Preview=repPreview;
  if(!pkg.initialized){
   let intro='<div class="panel-body"><p>Start an application package by choosing the actual filing location. This selects the study permit form and connects the existing document checklist.</p><div class="warning-text">IMM 1294 and IMM 5709 are NOT auto-filled. Do not file an internal worksheet as an official IRCC document.</div>';
   intro+=btn('Start application package','pkg:create','primary')+'</div>';
@@ -32,6 +36,23 @@ async function renderPackage(){
      (copy&&copy.scan_status==='cleared'&&copy.review_status==='pending'?
        ' '+btn('Review copy','pkg:review:'+copy.id,'primary smallbtn'):'')+
      '</div></div>';
+ }
+ if(repPreview){
+   body+='<h3>IMM 5476 · Representative appointment preparation</h3>';
+   body+='<div class="callout"><strong>'+repPreview.verified_text_fields+' / '+repPreview.observed_text_fields+
+     ' mapped text fields backed by verified evidence</strong> · Observed version '+h(repPreview.revision)+
+     '. This covers only the paid-CICC appointment scenario; no government PDF is generated.</div>';
+   body+='<details><summary>Inspect IMM 5476 mapped field evidence and gaps</summary>';
+   for(const item of repPreview.fields){
+     body+='<div class="item-row"><div style="flex:1;min-width:0"><strong>'+h(item.key.replaceAll('_',' '))+'</strong>'+
+       '<div class="meta">'+h(item.status.replaceAll('_',' '))+
+       (item.value?' · '+h(item.value):'')+'</div>'+
+       '<div class="meta">'+h(item.canonical_path)+'</div></div>'+
+       chip(item.status)+'</div>';
+   }
+   body+='</details>';
+   body+='<p class="warning-text">Official autofill remains disabled. '+h(repPreview.blockers.length)+
+     ' preparation or release blockers remain, including form-completeness, licence and signature review requirements.</p>';
  }
  body+='<h3>Verified form preparation · Internal fields only</h3>';
  body+='<div class="callout">'+h(prep.form_code)+' · '+h(prep.source_revision)+' · Source-linked internal preview. This is NOT a filled government PDF.</div>';
