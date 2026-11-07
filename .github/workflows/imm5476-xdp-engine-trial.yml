@@ -4,6 +4,7 @@ on:
     paths:
       - ".github/workflows/imm5476-xdp-engine-trial.yml"
       - "scripts/imm5476_xdp_vendor_trial.py"
+      - "scripts/verify_imm5476_radios.py"
       - "experiments/QoppaImm5476Trial.java"
       - "experiments/TallImm5476Trial/**"
   workflow_dispatch:
@@ -108,24 +109,33 @@ jobs:
           jar tf trial-qoppa/jpdffields-eval.jar | grep -q 'com/qoppa/pdfFields/PDFFields.class'
       - name: Compile authentic-form Qoppa XDP importer
         run: javac -cp trial-qoppa/jpdffields-eval.jar -d trial-qoppa experiments/QoppaImm5476Trial.java
-      - name: Import fictional XDP through Qoppa evaluation SDK
+      - name: Import fictional XDP using native Qoppa SDK and independently verify
         run: |
-          for variant in scalar rich; do
-            java -cp "trial-qoppa:trial-qoppa/jpdffields-eval.jar" QoppaImm5476Trial \
+          for variant in scalar rich appointing-paid-cicc; do
+            java -Djava.awt.headless=true \
+              -cp "trial-qoppa:trial-qoppa/jpdffields-eval.jar" QoppaImm5476Trial \
               vendor-fixtures/official-imm5476.pdf \
               vendor-fixtures/fictional-$variant.xdp \
               trial-qoppa/qoppa-$variant-UNVALIDATED.pdf \
               >trial-qoppa/qoppa-$variant.log 2>&1 || true
             cat trial-qoppa/qoppa-$variant.log
             if test -f trial-qoppa/qoppa-$variant-UNVALIDATED.pdf; then
-              python -m scripts.imm5476_xdp_vendor_trial verify \
-                vendor-fixtures/official-imm5476.pdf \
-                trial-qoppa/qoppa-$variant-UNVALIDATED.pdf \
-                trial-qoppa/qoppa-$variant-report.json || true
+              if test "$variant" = "appointing-paid-cicc"; then
+                python -m scripts.verify_imm5476_radios \
+                  vendor-fixtures/official-imm5476.pdf \
+                  trial-qoppa/qoppa-$variant-UNVALIDATED.pdf \
+                  trial-qoppa/qoppa-$variant-report.json || true
+              else
+                python -m scripts.imm5476_xdp_vendor_trial verify \
+                  vendor-fixtures/official-imm5476.pdf \
+                  trial-qoppa/qoppa-$variant-UNVALIDATED.pdf \
+                  trial-qoppa/qoppa-$variant-report.json || true
+              fi
             fi
           done
-          if ! grep -l 'values_and_signed_bytes_pass' trial-qoppa/*-report.json 2>/dev/null; then
-            echo "Qoppa did not pass two-layer validation on either XDP variant"
+          if ! grep -l '"status": "twelve_text_two_radio_layers_pass_pre_adobe"' \
+              trial-qoppa/qoppa-appointing-paid-cicc-report.json 2>/dev/null; then
+            echo "Qoppa trial failed 12 text + 2 radio compatibility criteria"
             exit 2
           fi
       - name: Archive Qoppa evaluation output, never SDK jar
