@@ -17,6 +17,9 @@ from datetime import datetime, timezone
 from hashlib import sha256
 import json
 from pathlib import Path
+from io import FileIO
+import tempfile
+import xml.etree.ElementTree as ET
 import sys
 import traceback
 
@@ -105,23 +108,39 @@ def run_trial(input_path: Path, output_path: Path) -> dict:
         "adobe_reader_tested": False,
         "ready_for_submission": False,
     }
-    # Aspose's Python/.NET Document exposes no .dispose() method.
-    # Use the documented context-manager interface instead.
+    # Document.form.xfa supports field enumeration but does not expose the
+    # C# XFA indexer setter in Python. Aspose's documented Python entry point
+    # for XFA data injection is facades.Form.set_xfa_data().
+    import aspose.pdf.facades as pdf_facades
+    from pypdf import PdfReader
     with ap.Document(str(input_path)) as document:
-        xfa = document.form.xfa
-        names = [str(name) for name in xfa.field_names]
-        report["xfa_field_inventory_count"] = len(names)
-        report["engine_can_enumerate_xfa"] = bool(names)
-        selected = resolve_field_names(names)
-        report["mapped_keys"] = sorted(selected)
-        report["requested_keys"] = list(TARGET_KEYS)
-        if not selected:
-            report["status"] = "no_matching_xfa_fields_visible_in_trial"
-            report["note"] = "Evaluation collection limit or XFA naming differs from canonical PDF fields"
-            return report
-        for key, vendor_name in selected.items():
-            xfa[vendor_name] = SYNTHETIC_VALUES[key]
-        document.save(str(output_path))
+        names = [str(name) for name in document.form.xfa.field_names]
+    report["xfa_field_inventory_count"] = len(names)
+    report["engine_can_enumerate_xfa"] = bool(names)
+    selected = resolve_field_names(names)
+    report["mapped_keys"] = sorted(selected)
+    report["requested_keys"] = list(TARGET_KEYS)
+    report["write_api"] = "facades.Form.set_xfa_data"
+    if not selected:
+        report["status"] = "no_matching_xfa_fields_visible_in_trial"
+        report["note"] = "Evaluation collection limit or XFA naming differs from canonical PDF fields"
+        return report
+    source_reader = PdfReader(str(input_path), strict=True)
+    dataset_bytes = _find_xfa_packet(source_reader, "datasets").get_object().get_data()
+    root = _parse_xml(dataset_bytes)
+    for key in selected:
+        _xfa_leaf(root, _FIELDS[key].xfa_path).text = SYNTHETIC_VALUES[key]
+    prepared_xml = ET.tostring(root, encoding="utf-8", xml_declaration=False)
+    if len(prepared_xml) > 3 * 1024 * 1024:
+        raise AsposeTrialBlocked("XFA datasets too large")
+    with tempfile.TemporaryDirectory(prefix="imm5476-aspose-test-") as tempdir:
+        xml_path = Path(tempdir) / "fictional-xfa-datasets.xml"
+        xml_path.write_bytes(prepared_xml)
+        facade = pdf_facades.Form()
+        facade.bind_pdf(str(input_path))
+        with FileIO(str(xml_path), "r") as xml_stream:
+            facade.set_xfa_data(xml_stream)
+        facade.save(str(output_path))
 
     if not output_path.is_file() or not output_path.read_bytes().startswith(b"%PDF-"):
         report["status"] = "vendor_failed_to_save_pdf"
