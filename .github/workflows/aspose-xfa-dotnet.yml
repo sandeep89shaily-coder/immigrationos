@@ -37,13 +37,26 @@ jobs:
           url=("https://www.canada.ca/content/dam/ircc/documents/pdf/english/"
                "kits/forms/imm5476/01-11-2025/imm5476e.pdf")
           expected="aca5c476b93d1c496b1afbc2cfe843499e852e31dcf0c192153bd01f8d6c56c4"
-          req=Request(url,headers={"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0","Accept":"application/pdf"})
-          with urlopen(req,timeout=25) as response:
-              raw=response.read(12*1024*1024+1)
-          digest=hashlib.sha256(raw).hexdigest()
-          print("official_pdf_bytes",len(raw),"exact_sha256_match",digest==expected)
-          if not raw.startswith(b"%PDF-") or digest != expected:
-              raise SystemExit("Wrong or unavailable official blank: refusing to generate PDF")
+          import time
+          from urllib.error import HTTPError
+          raw=None
+          for attempt in range(1,5):
+              try:
+                  req=Request(url,headers={"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0","Accept":"application/pdf"})
+                  with urlopen(req,timeout=45) as response:
+                      candidate=response.read(12*1024*1024+1)
+                  digest=hashlib.sha256(candidate).hexdigest()
+                  if not candidate.startswith(b"%PDF-") or digest != expected:
+                      raise SystemExit("Official blank changed or is not PDF; refusing alternate bytes")
+                  raw=candidate
+                  break
+              except (OSError, TimeoutError) as exc:
+                  print("Official source attempt",attempt,"error",type(exc).__name__)
+                  if attempt < 4:
+                      time.sleep(attempt * 2)
+          if raw is None:
+              raise SystemExit("Official blank download repeatedly unavailable; no XFA run")
+          print("official_pdf_bytes",len(raw),"exact_sha256_match",True)
           (Path(os.environ["RUNNER_TEMP"]) / "imm5476-blank.pdf").write_bytes(raw)
           PY
       - name: Native .NET XFA field population, fictional data only
