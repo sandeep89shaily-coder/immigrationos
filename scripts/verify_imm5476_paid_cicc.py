@@ -119,6 +119,7 @@ def verify(original_pdf: Path, generated_pdf: Path) -> dict:
         "original_bytes_untouched_prefix": filled_bytes.startswith(original_bytes),
         "original_ur3_signed_bytes_unchanged": signed(filled_bytes) == signed(original_bytes),
         "warnings": warnings,
+        "rich_surname_xhtml_valid": not bool(malformed_surname_xml),
         "adobe_acrobat_tested": False,
         "commercial_license_verified": False,
         "submission_ready": False,
@@ -129,6 +130,7 @@ def verify(original_pdf: Path, generated_pdf: Path) -> dict:
         report["text_fields_match_both_layers"] == len(TEXT_PATHS) and
         all(radio_status.values()) and
         report["signatures_and_signature_dates_unpopulated"] and
+        report["rich_surname_xhtml_valid"] and
         report["original_ur3_signed_bytes_unchanged"])
     return report
 
