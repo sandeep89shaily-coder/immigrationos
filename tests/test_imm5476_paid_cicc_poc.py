@@ -109,3 +109,24 @@ def test_refuses_unapproved_pdf_bytes_without_writing(tmp_path):
     with pytest.raises(ValueError, match="Unapproved"):
         poc.generate_fictional_paid_cicc_xdp(fake_pdf)
     assert not list(tmp_path.iterdir())
+
+
+def test_acrobat_regression_rejects_escaped_xhtml_in_surname_dataset():
+    from scripts.verify_imm5476_paid_cicc import is_plain_surname_node
+
+    scalar = ET.Element("familyName")
+    scalar.text = "Sharma"
+    assert is_plain_surname_node(scalar, "Sharma")
+
+    # This was the actual previous Qoppa output. The XHTML was well-formed,
+    # but Adobe displayed the markup *literally* in both surname fields.
+    escaped_markup = ET.Element("familyName")
+    escaped_markup.text = (
+        '<body xmlns="http://www.w3.org/1999/xhtml">'
+        '<p><span>Sharma</span></p></body>')
+    assert not is_plain_surname_node(escaped_markup, "Sharma")
+
+    rich_node = ET.Element("familyName")
+    ET.SubElement(rich_node, "{http://www.w3.org/1999/xhtml}body").text = "Sharma"
+    assert not is_plain_surname_node(rich_node, "Sharma")
+    assert not is_plain_surname_node(scalar, "Kapoor")
