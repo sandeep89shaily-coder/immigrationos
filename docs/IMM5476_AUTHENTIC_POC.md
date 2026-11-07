@@ -64,3 +64,14 @@ The current form revision must be reverified with IRCC before any real use.
 **Official validated form count remains zero.** This proof addresses the
 technical form-writing obstacle with the first authentic IRCC PDF. It
 does not establish that an officially accepted application has been created.
+
+## Independent visual check (non-Adobe renderer)
+
+All twelve sample values round-tripped in both AcroForm and XFA datasets,
+but **only ten appeared in the Poppler-rendered PDF pages**. The two surname
+fields use rich-text XHTML spans in their XFA datasets and carry special PDF
+field flags; the regular PDF renderer displayed those two boxes as blank even
+though the actual AcroForm `/V` and XFA XML contained the requested values.
+This is a **known compatibility failure / investigation item**, not a proof
+of complete visual filling. Test the populated output in Adobe Reader and
+correct this before approving a complete IMM 5476 workflow.
