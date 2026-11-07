@@ -8,6 +8,8 @@ async function renderPackage(){
  S.activePackage=pkg;
  const requirements=pkg.initialized?await api(reqRoot()):null;
  S.activeRequirements=requirements;
+ const prep=pkg.initialized?await api(q()+'/cases/'+encodeURIComponent(S.caseId)+'/form-preparation/preview'):null;
+ S.activeFormPreparation=prep;
  if(!pkg.initialized){
   let intro='<div class="panel-body"><p>Start an application package by choosing the actual filing location. This selects the study permit form and connects the existing document checklist.</p><div class="warning-text">IMM 1294 and IMM 5709 are NOT auto-filled. Do not file an internal worksheet as an official IRCC document.</div>';
   intro+=btn('Start application package','pkg:create','primary')+'</div>';
@@ -31,6 +33,15 @@ async function renderPackage(){
        ' '+btn('Review copy','pkg:review:'+copy.id,'primary smallbtn'):'')+
      '</div></div>';
  }
+ body+='<h3>Verified form preparation · Internal fields only</h3>';
+ body+='<div class="callout">'+h(prep.form_code)+' · '+h(prep.source_revision)+' · Source-linked internal preview. This is NOT a filled government PDF.</div>';
+ for(const item of prep.fields){
+   body+='<div class="item-row"><div style="flex:1"><strong>'+h(item.label)+'</strong> · '+h(item.canonical_path)+
+     '<div class="meta">'+h(item.status.replaceAll('_',' '))+
+     (item.value?' · '+h(item.value):'')+'</div></div>'+chip(item.status)+'</div>';
+ }
+ if(prep.blockers.length)body+='<p class="warning-text">Blocked: '+prep.blockers.map(x=>h(x.replaceAll('_',' '))).join(', ')+'</p>';
+ body+=btn('Capture verified internal preparation packet','pkg:capture-preparation','smallbtn'+(prep.verified_subset_complete?'':' muted'));
  body+='<h3>Supporting evidence worklist</h3>';
  body+='<div class="callout">These are the existing, non-exhaustive document requirements for this study-permit route. Conditional items still require an RCIC applicability decision.</div>';
  for(const req of requirements.requirements){
@@ -101,6 +112,7 @@ function pkgReview(copyId){
 
 async function pkgAction(action){
  if(action==='pkg:create')return pkgCreate();
+ if(action==='pkg:capture-preparation')return pkgCapturePreparation();
  const [,cmd,id]=action.split(':');
  if(cmd==='link')return pkgLink(id);
  if(cmd==='applicability')return pkgApplicability(id);
@@ -147,5 +159,18 @@ function pkgDocumentReview(key){
      await api(reqRoot()+'/'+encodeURIComponent(key)+'/documents/review',{
        method:'POST',body:{document_id:v.document_id,decision:v.decision,
          reason:v.reason,inspected_original_document:form.querySelector('[name=inspected]').checked}});
+   });
+}
+
+async function pkgCapturePreparation(){
+ const preview=S.activeFormPreparation;
+ if(!preview?.verified_subset_complete)return toast('Resolve case evidence and form-preview blockers first.');
+ modal('<h2>Capture an internal preparation snapshot</h2><p>This captures only a small set of source-linked canonical fields. It does NOT generate, validate, sign, barcode or submit an IRCC form.</p><form>'+
+   '<label><input type="checkbox" name="acknowledge" required> I understand this is not an official IRCC form.</label>'+
+   actions('Capture internal packet')+'</form>',async form=>{
+     const response=await api(q()+'/cases/'+encodeURIComponent(S.caseId)+'/form-preparation/packets',{
+       method:'POST',body:{expected_sha256:preview.snapshot_sha256,
+          acknowledge_internal_subset_only:form.querySelector('[name=acknowledge]').checked}});
+     toast('Internal packet captured: '+response.id.slice(0,8));
    });
 }
