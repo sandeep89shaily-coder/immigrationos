@@ -166,6 +166,7 @@ def capture_review_packet(
          "snapshot_sha256": report["snapshot_sha256"],
          "verified_text_fields": report["verified_text_fields"]})
     db.commit()
-    db.refresh(packet)
+    # Never refresh after commit: PostgreSQL RLS context is transaction-local.
+    # expire_on_commit=False retains the flush-populated values for response.
     response.headers["Cache-Control"] = "no-store"
     return packet_to_dict(packet, report["snapshot_sha256"])
