@@ -14,6 +14,9 @@ async function renderPackage(){
  const repPreview=hasRepresentativeForm?await api(
    q()+'/cases/'+encodeURIComponent(S.caseId)+'/ircc/IMM5476/preparation'):null;
  S.activeImm5476Preview=repPreview;
+ const repPackets=hasRepresentativeForm?await api(
+   q()+'/cases/'+encodeURIComponent(S.caseId)+'/ircc/IMM5476/packets'):[];
+ S.activeImm5476Packets=repPackets;
  if(!pkg.initialized){
   let intro='<div class="panel-body"><p>Start an application package by choosing the actual filing location. This selects the study permit form and connects the existing document checklist.</p><div class="warning-text">IMM 1294 and IMM 5709 are NOT auto-filled. Do not file an internal worksheet as an official IRCC document.</div>';
   intro+=btn('Start application package','pkg:create','primary')+'</div>';
@@ -51,6 +54,17 @@ async function renderPackage(){
        chip(item.status)+'</div>';
    }
    body+='</details>';
+   const reviewBlocked=repPreview.blockers.some(x=>[
+     'case_closed','open_evidence_issues','source_review_stale'].includes(x))||
+     repPreview.fields.some(x=>!['missing_evidence','verified_source_value'].includes(x.status));
+   const latestPacket=repPackets[0];
+   body+='<p class="meta">Internal review checkpoints: '+repPackets.length+
+     (latestPacket?' · Latest '+d(latestPacket.created_at)+
+       (latestPacket.is_current?' (current)':' (stale — case data changed)'):'')+
+     '</p>';
+   body+=btn('Record IMM 5476 evidence checkpoint','pkg:capture-imm5476',
+     'smallbtn'+(repPreview.verified_text_fields>0&&!reviewBlocked?'':' muted'));
+   body+='<p class="meta">This captures an internal historical review checkpoint only. Missing fields remain missing; no PDF or electronic signature is generated.</p>';
    body+='<p class="warning-text">Official autofill remains disabled. '+h(repPreview.blockers.length)+
      ' preparation or release blockers remain, including form-completeness, licence and signature review requirements.</p>';
  }
@@ -134,6 +148,7 @@ function pkgReview(copyId){
 async function pkgAction(action){
  if(action==='pkg:create')return pkgCreate();
  if(action==='pkg:capture-preparation')return pkgCapturePreparation();
+ if(action==='pkg:capture-imm5476')return pkgCaptureImm5476();
  const [,cmd,id]=action.split(':');
  if(cmd==='link')return pkgLink(id);
  if(cmd==='applicability')return pkgApplicability(id);
@@ -194,4 +209,20 @@ async function pkgCapturePreparation(){
           acknowledge_internal_subset_only:form.querySelector('[name=acknowledge]').checked}});
      toast('Internal packet captured: '+response.id.slice(0,8));
    });
+}
+
+async function pkgCaptureImm5476(){
+ const data=S.activeImm5476Preview;
+ if(!data)return toast('Refresh the IMM 5476 preparation first');
+ const invalid=data.fields.some(x=>!['missing_evidence','verified_source_value'].includes(x.status));
+ const blocked=data.blockers.some(x=>['case_closed','open_evidence_issues','source_review_stale'].includes(x));
+ if(!data.verified_text_fields||invalid||blocked)return toast('Resolve field and case blockers before recording a checkpoint.');
+ if(!confirm('Store a historical IMM 5476 INTERNAL evidence checkpoint? This is not a completed government form and does not allow filing or signature.'))return;
+ const url=q()+'/cases/'+encodeURIComponent(S.caseId)+'/ircc/IMM5476/packets';
+ const packet=await api(url,{method:'POST',body:{
+   expected_sha256:data.snapshot_sha256,
+   acknowledge_internal_only:true
+ }});
+ await render();
+ toast('Saved internal IMM 5476 checkpoint '+packet.id.slice(0,8)+'; government form generation remains disabled');
 }
