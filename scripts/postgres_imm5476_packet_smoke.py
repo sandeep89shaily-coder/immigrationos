@@ -102,7 +102,7 @@ try:
                 assert response.status_code == 201, response.text
                 packet = response.json()
                 assert packet["is_current"] and not packet["verified_observed_subset"]
-                assert packet["fields"][0]["value"] == "Fictional Reviewed Value"
+                assert next(f for f in packet["fields"] if f["key"] == "applicant_given")["value"] == "Fictional Reviewed Value"
                 assert packet["submission_supported"] is False
                 assert api.get(root + "/ircc/IMM5476/packets").json()[0]["id"] == packet["id"]
                 assert api.post(root + "/ircc/IMM5476/packets", json={
