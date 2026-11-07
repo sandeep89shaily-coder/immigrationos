@@ -31,7 +31,12 @@ def add_source_and_facts(api, org, case, *, all_fields=True, status="verified"):
             db.add(CaseFact(
                 org_id=UUID(org), case_id=UUID(case),
                 document_id=doc_id, field_path=canonical,
-                value="Synthetic-" + key, review_status=status,
+                value={
+                    "applicant_dob": "2001-06-09",
+                    "applicant_email": "applicant@example.test",
+                    "representative_email": "representative@example.test",
+                    "uci": "1234-5678",
+                }.get(key, "Synthetic-" + key), review_status=status,
                 created_by_sub="test-user-a",
                 reviewed_by_sub="test-user-a" if status == "verified" else None))
         db.commit()
@@ -80,7 +85,12 @@ def test_completed_scanned_reviewed_subset_has_provenance_but_still_no_pdf(api, 
     assert data["pdf_export_available"] is False
     assert data["submission_supported"] is False
     for field in data["fields"]:
-        assert field["value"] == "Synthetic-" + field["key"]
+        assert field["value"] == {
+            "applicant_dob": "2001-06-09",
+            "applicant_email": "applicant@example.test",
+            "representative_email": "representative@example.test",
+            "uci": "1234-5678",
+        }.get(field["key"], "Synthetic-" + field["key"])
         assert field["status"] == "verified_source_value"
         assert field["source_hashes"] == ["b" * 64]
         assert field["document_ids"] == [str(doc_id)]
@@ -193,3 +203,31 @@ def test_open_issues_closed_cases_and_source_age_gate_even_internal_preview(api)
             scan_status={}, open_issue_count=0,
             today=__import__("datetime").date(2027, 1, 1))
     assert "source_review_stale" in computed["blockers"]
+
+
+def test_bad_format_even_when_reviewed_is_withheld(api, monkeypatch):
+    client, _, factory = api
+    org, case, url = make_case(api, "imm5476-review-invalid-format")
+    doc_id = add_source_and_facts(api, org, case)
+    monkeypatch.setattr(preview, "scan_status_by_document",
+                        lambda *args: {doc_id: "cleared"})
+    bad = {
+        "identity.date_of_birth": "2001-02-30",
+        "contact.email": "not-an-email",
+        "representative.contact.email": "representative at example.test",
+        "identity.uci": "invalid-identifier",
+    }
+    with factory() as db:
+        for fact in db.query(CaseFact).filter(CaseFact.case_id == UUID(case)).all():
+            if fact.field_path in bad:
+                fact.value = bad[fact.field_path]
+        db.commit()
+    report = client.get(url).json()
+    by_key = {f["key"]: f for f in report["fields"]}
+    for key in ("applicant_dob", "applicant_email", "representative_email", "uci"):
+        assert by_key[key]["status"] == "invalid_evidence_value"
+        assert by_key[key]["value"] is None
+        assert by_key[key]["evidence_ids"] == []
+    assert report["verified_text_fields"] == 17
+    assert report["verified_observed_subset"] is False
+    assert "observed_fields_unresolved" in report["blockers"]
