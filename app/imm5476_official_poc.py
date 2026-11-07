@@ -65,7 +65,7 @@ _Q7 = _B + "question7[0]."
 _FIELDS = {
     "applicant_family": FieldBinding(_A + "familyName[0]", _path(
         ("IMM_5476", 0), ("Page1", 0), ("SectionA", 0),
-        ("familyName", 0), ("body", 0), ("p", 0))),
+        ("familyName", 0), ("body", 0), ("p", 0), ("span", 0))),
     "applicant_given": FieldBinding(_A + "givenName[0]", _path(
         ("IMM_5476", 0), ("Page1", 0), ("SectionA", 0), ("givenName", 0))),
     "applicant_dob": FieldBinding(_A + "DOB[0]", _path(
@@ -76,7 +76,7 @@ _FIELDS = {
         ("IMM_5476", 0), ("Page1", 0), ("SectionA", 0), ("office", 2))),
     "representative_family": FieldBinding(_B + "familyName[0]", _path(
         ("IMM_5476", 0), ("Page1", 0), ("SectionB", 0),
-        ("familyName", 0), ("body", 0), ("p", 0))),
+        ("familyName", 0), ("body", 0), ("p", 0), ("span", 0))),
     "representative_given": FieldBinding(_B + "givenName[0]", _path(
         ("IMM_5476", 0), ("Page1", 0), ("SectionB", 0), ("givenName", 0))),
     "representative_firm": FieldBinding(_Q7 + "organization[0]", _path(
