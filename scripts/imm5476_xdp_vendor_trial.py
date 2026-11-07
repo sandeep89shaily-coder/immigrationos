@@ -24,6 +24,21 @@ ET.register_namespace("xdp", _XDP)
 ET.register_namespace("xfa", _XFA)
 
 
+def _xfa_node(root, path):
+    """Navigate a typed XFA path, allowing an intermediate rich-text parent."""
+    roots = [e for e in root if e.tag.rsplit("}", 1)[-1] == "data"]
+    if len(roots) != 1:
+        raise ValueError("XFA data node missing or duplicated")
+    current = roots[0]
+    for name, index in path:
+        matches = [child for child in current
+                   if child.tag.rsplit("}", 1)[-1] == name]
+        if index >= len(matches):
+            raise ValueError("XFA path changed: " + name)
+        current = matches[index]
+    return current
+
+
 def checked_blank(blank_path: Path) -> bytes:
     data = blank_path.read_bytes()
     if sha256(data).hexdigest() != SOURCE_SHA256 or len(data) > 12 * 1024 * 1024:
@@ -46,7 +61,7 @@ def prepare(blank: Path, out_dir: Path) -> None:
                 # Preserve all surrounding form data but replace ONLY the
                 # special XHTML value node with simple XFA element text.
                 node_path = binding.xfa_path[:-3]
-                surname = _xfa_leaf(root, node_path)
+                surname = _xfa_node(root, node_path)
                 for child in list(surname):
                     surname.remove(child)
                 surname.text = SYNTHETIC_VALUES[key]
@@ -93,7 +108,7 @@ def verify(blank: Path, filled: Path, report: Path) -> bool:
                 # Scalar XFA has no XHTML descendant path. Do not try to
                 # resolve it until deciding which XDP encoding was saved.
                 if key.endswith("_family"):
-                    parent = _xfa_leaf(root, _FIELDS[key].xfa_path[:-3])
+                    parent = _xfa_node(root, _FIELDS[key].xfa_path[:-3])
                     value = (parent.text if len(parent) == 0 else
                              _xfa_leaf(root, _FIELDS[key].xfa_path).text)
                 else:
