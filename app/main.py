@@ -245,3 +245,6 @@ def client_portal_page():
         'Cache-Control': 'no-store',
         'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' http://localhost:8080 http://127.0.0.1:8080; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'",
     })
+
+from app.form_preparation import router as form_preparation_router
+app.include_router(form_preparation_router)
