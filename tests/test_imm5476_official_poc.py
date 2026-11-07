@@ -41,7 +41,7 @@ def synthetic_blank():
     template = DecodedStreamObject()
     template.set_data(b'<template xmlns="http://www.xfa.org/schema/xfa-template/3.6/"/>')
     preamble = DecodedStreamObject()
-    preamble.set_data(b'<?xml version="1.0" encoding="UTF-8"?>\\n<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/">')
+    preamble.set_data(b'<?xml version="1.0" encoding="UTF-8"?>\n<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/">')
     postamble = DecodedStreamObject()
     postamble.set_data(b'</xdp:xdp>')
     acro[NameObject("/XFA")] = ArrayObject([
