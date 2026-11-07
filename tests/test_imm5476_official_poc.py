@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 
 import pytest
 from pypdf import PdfReader, PdfWriter
+from pypdf.generic import NullObject
 from pypdf.generic import (
     ArrayObject, DecodedStreamObject, DictionaryObject, NameObject, TextStringObject,
 )
@@ -96,7 +97,7 @@ def test_incremental_pdf_preserves_original_and_both_form_layers(tmp_path, monke
         for ref in page.get("/Annots", []):
             annot = ref.get_object()
             if str(annot.get("/V", "")) in ("Sharma", "Kapoor"):
-                assert annot.get("/RV") is None
+                assert annot.get("/RV") is None or isinstance(annot.get("/RV"), NullObject)
                 assert int(annot.get("/Ff", 0)) & (1 << 25) == 0
                 appearance = annot["/AP"]["/N"].get_object().get_data()
                 literal = ("(" + str(annot["/V"]) + ") Tj").encode("ascii")
