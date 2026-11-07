@@ -36,8 +36,11 @@ try
     if (original.Length > 12_582_912
         || Convert.ToHexString(SHA256.HashData(original)).ToLowerInvariant() != pinned)
         throw new InvalidOperationException("Official blank PDF checksum mismatch");
-    using var document = new Document(inputPath);
-    string[] names = document.Form.XFA.FieldNames;
+    string[] names;
+    using (var inspected = new Document(inputPath))
+    {
+        names = inspected.Form.XFA.FieldNames;
+    }
     report["xfa_field_count"] = names.Length;
     var selected = new Dictionary<string, string>();
     foreach (var (key, source) in values)
@@ -47,22 +50,36 @@ try
         if (matches.Length > 1)
             throw new InvalidOperationException("Ambiguous XFA field: " + key);
         if (matches.Length == 1)
-        {
-            document.Form.XFA[matches[0]] = source.Value;
             selected[key] = matches[0];
-        }
     }
     report["matched_fields"] = selected.Keys.OrderBy(k => k).ToArray();
+    report["write_method"] = "Document.Save() incremental update";
     if (selected.Count == 0)
     {
         report["status"] = "no_matching_fields_in_evaluation";
     }
     else
     {
-        document.Save(outputPath);
-        report["status"] = "saved_unvalidated_pdf";
+        // Never alter the original: copy first, then write ONLY the copy.
+        File.Copy(inputPath, outputPath);
+        using (var stream = new FileStream(outputPath, FileMode.Open,
+                                           FileAccess.ReadWrite, FileShare.None))
+        using (var document = new Document(stream))
+        {
+            foreach (var (key, vendorName) in selected)
+                document.Form.XFA[vendorName] = values[key].Value;
+            // Parameterless Save() is Aspose's documented incremental save.
+            document.Save();
+        }
+        byte[] generated = File.ReadAllBytes(outputPath);
+        bool prefixPreserved = generated.Length >= original.Length
+            && generated.AsSpan(0, original.Length).SequenceEqual(original);
+        report["original_signed_byte_prefix_preserved"] = prefixPreserved;
         report["output_sha256"] = Convert.ToHexString(
-            SHA256.HashData(File.ReadAllBytes(outputPath))).ToLowerInvariant();
+            SHA256.HashData(generated)).ToLowerInvariant();
+        report["status"] = prefixPreserved
+            ? "saved_incrementally_unvalidated"
+            : "nonincremental_rewrite_rejected";
     }
 }
 catch (Exception exc)
@@ -84,4 +101,4 @@ finally
         File.WriteAllText(reportPath, result);
     }
 }
-return (string)report["status"]! == "saved_unvalidated_pdf" ? 0 : 2;
+return (string)report["status"]! == "saved_incrementally_unvalidated" ? 0 : 2;
