@@ -250,3 +250,5 @@ from app.form_preparation import router as form_preparation_router
 app.include_router(form_preparation_router)
 from app.imm5476_case_preview import router as imm5476_case_preview_router
 app.include_router(imm5476_case_preview_router)
+from app.imm5476_packets import router as imm5476_packets_router
+app.include_router(imm5476_packets_router)

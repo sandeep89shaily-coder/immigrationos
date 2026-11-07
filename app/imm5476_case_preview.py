@@ -174,6 +174,7 @@ def build_preview(
         "operation": "appoint",
         "representative_type": "paid_cicc",
         "case_id": str(case.id),
+        "case_status": case.status,
         "fields": fields,
         "observed_text_fields": 21,
         "verified_text_fields": sum(f["status"] == "verified_source_value" for f in fields),
