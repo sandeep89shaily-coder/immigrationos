@@ -4,6 +4,8 @@ Evaluates only the deliberately limited reviewed *internal* field subsets in
 REGISTRY. No complete field inventory, dynamic sections, PDF or filing claim.
 """
 from datetime import date
+from decimal import Decimal, InvalidOperation
+import re
 from hashlib import sha256
 import json
 from uuid import UUID
@@ -28,6 +30,43 @@ FORMAT_KEYS = {
 SCHEMA_VERSION = "internal-reviewed-subset-1"
 
 
+DATE_PATHS = frozenset({
+    "identity.passport_issue_date", "identity.passport_expiry_date",
+    "education.program_start_date", "education.program_end_date",
+})
+MONEY_PATHS = frozenset({"finance.tuition_cad", "finance.available_funds_cad"})
+
+
+def validate_guided_value(path: str, state: dict) -> dict:
+    """Fail closed for new guidance fields with locally checkable syntax.
+
+    Real-world plausibility and documentary credibility remain human decisions.
+    """
+    if state["status"] != "verified_source_value":
+        return state
+    value = state["value"]
+    plausible = True
+    if path in DATE_PATHS:
+        try:
+            plausible = date.fromisoformat(value).isoformat() == value
+        except (TypeError, ValueError):
+            plausible = False
+    elif path in MONEY_PATHS:
+        try:
+            money = Decimal(value)
+            plausible = (money.is_finite() and money >= 0
+                         and money.as_tuple().exponent >= -2)
+        except (InvalidOperation, TypeError):
+            plausible = False
+    elif path == "education.dli_number":
+        # Do not falsely validate an institution's DLI status using this syntax.
+        plausible = bool(re.fullmatch(r"[O0-9][A-Za-z0-9-]{2,40}", value))
+    if not plausible:
+        return {**state, "status": "invalid_evidence_value", "value": None,
+                "evidence_ids": [], "document_ids": [], "source_hashes": []}
+    return state
+
+
 def reviewed_subset_report(*, source: ObservedForm, case: Case,
                            facts: list[CaseFact], documents: list[CaseDocument],
                            scan_status: dict[UUID, str], open_issue_count: int,
@@ -50,8 +89,10 @@ def reviewed_subset_report(*, source: ObservedForm, case: Case,
     for section in manifest.sections:
         for field in section.fields:
             selected = [f for f in scoped_facts if f.field_path == field.canonical_path]
-            state = _field_status(FORMAT_KEYS.get(field.canonical_path, field.canonical_path),
-                                  selected, scoped_documents, scan_status)
+            state = validate_guided_value(
+                field.canonical_path,
+                _field_status(FORMAT_KEYS.get(field.canonical_path, field.canonical_path),
+                              selected, scoped_documents, scan_status))
             if state["status"] == "verified_source_value":
                 verified_values[field.canonical_path] = state["value"]
     expanded = expand_manifest(manifest, verified_values)
@@ -60,9 +101,9 @@ def reviewed_subset_report(*, source: ObservedForm, case: Case,
         for field in section["fields"]:
             selected = [f for f in scoped_facts
                         if f.field_path == field["canonical_path"]]
-            state = _field_status(
+            state = validate_guided_value(field["canonical_path"], _field_status(
                 FORMAT_KEYS.get(field["canonical_path"], field["canonical_path"]),
-                selected, scoped_documents, scan_status)
+                selected, scoped_documents, scan_status))
             if field["condition_state"] != "active":
                 # Never reveal or count data from an inactive or unresolved branch.
                 state = {"status": "inactive_condition" if
@@ -71,7 +112,9 @@ def reviewed_subset_report(*, source: ObservedForm, case: Case,
                          "source_hashes": []}
             fields.append({
                 "label": field["label"], "canonical_path": field["canonical_path"],
-                "condition_state": field["condition_state"], **state})
+                "condition_state": field["condition_state"],
+                "source_url": field["source_url"],
+                "source_section": field["source_section"], **state})
 
 
     verified = sum(f["status"] == "verified_source_value" for f in fields)
@@ -103,6 +146,7 @@ def reviewed_subset_report(*, source: ObservedForm, case: Case,
         "manifest_version": manifest.manifest_version,
         "manifest_sha256": manifest.digest,
         "manifest_sections": expanded,
+        "guided_source_field_count": sum(f["source_url"] is not None for f in fields),
         "fields": fields,
         "internal_preview_field_count": len(fields),
         "verified_preview_field_count": verified,
