@@ -14,6 +14,9 @@ from sqlalchemy.orm import Session
 from app.access import OrgAccess, allow, get_org_access
 from app.applicant_models import ApplicantProfile, FamilyMember
 from app.applicant_history_models import ApplicantHistory
+from app.applicant_supplemental_history_models import ApplicantSupplementalHistory
+from app.repeatable_intake_models import ClientRepeatableProposal, ClientRepeatableDecision
+from app.supplemental_disclosure_review import supplemental_disclosure_review
 from app.db import get_db
 from app.form_manifest import MANIFESTS
 from app.history_timeline_audit import audit_history_timeline
@@ -43,7 +46,8 @@ def build_worklist(*, case: Case, form_code: str, profile: ApplicantProfile | No
                    submission: StudyIntakeSubmission | None,
                    decisions: list[StudyIntakeDecision],
                    facts: list[CaseFact], documents: list[CaseDocument],
-                   scans: dict[UUID, str]) -> dict:
+                   scans: dict[UUID, str],
+                   supplemental_records=(), proposals=(), proposal_decisions=()) -> dict:
     if form_code not in MANIFESTS or case.application_type != "study_permit":
         raise ValueError("Incompatible study-permit worklist context")
     docs = {d.id: d for d in documents
@@ -125,6 +129,10 @@ def build_worklist(*, case: Case, form_code: str, profile: ApplicantProfile | No
                        form_code.lower() + ".html"),
         "source_section": "Employment (work or occupation)",
     }
+    supplemental_review = supplemental_disclosure_review(
+        case=case, submission=submission, proposals=proposals,
+        decisions=proposal_decisions, records=supplemental_records,
+        facts=facts, documents=documents, scans=scans)
     manifest = MANIFESTS[form_code]
     return {
         "case_id": str(case.id), "form_code": form_code,
@@ -140,6 +148,7 @@ def build_worklist(*, case: Case, form_code: str, profile: ApplicantProfile | No
         },
         "questions": rows,
         "employment_history_review": occupation_review,
+        "supplemental_disclosure_review": supplemental_review,
         "preliminary_question_count": len(rows),
         "document_verified_question_count": sum(
             x["status"] == "evidence_verified" for x in rows),
@@ -194,9 +203,20 @@ def study_intake_worklist(org_id: UUID, case_id: UUID, response: Response,
         CaseFact.org_id == org_id, CaseFact.case_id == case_id)).all()
     documents = db.scalars(select(CaseDocument).where(
         CaseDocument.org_id == org_id, CaseDocument.case_id == case_id)).all()
+    supplemental = db.scalars(select(ApplicantSupplementalHistory).where(
+        ApplicantSupplementalHistory.org_id == org_id,
+        ApplicantSupplementalHistory.client_id == case.client_id)).all()
+    proposals = db.scalars(select(ClientRepeatableProposal).where(
+        ClientRepeatableProposal.org_id == org_id,
+        ClientRepeatableProposal.case_id == case_id)).all()
+    proposal_decisions = db.scalars(select(ClientRepeatableDecision).where(
+        ClientRepeatableDecision.org_id == org_id,
+        ClientRepeatableDecision.case_id == case_id)).all()
     response.headers["Cache-Control"] = "no-store"
     return build_worklist(
         case=case, form_code=form_code, profile=profile, family=family,
         histories=histories, submission=submission, decisions=decisions,
         facts=facts, documents=documents,
-        scans=scan_status_by_document(db, org_id, case_id))
+        scans=scan_status_by_document(db, org_id, case_id),
+        supplemental_records=supplemental, proposals=proposals,
+        proposal_decisions=proposal_decisions)
