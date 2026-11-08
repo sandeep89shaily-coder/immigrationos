@@ -322,19 +322,11 @@ def test_source_anchored_alias_and_national_id_branch_validation(api):
     assert client.get(_staff_url(org, case)).json()["submissions"][0]["answers"]["identity.other_family_name"]=="Former"
 
 
-def test_unsure_parent_keeps_conditional_branch_unresolved(api):
-    client, who, factory = api
-    org, case, staff = _open_client(api, "expanded-unsure-conditions")
-    saved=_submit(client,case,fields={**SYNTHETIC_ANSWERS,
-                                     "identity.has_other_names":"unsure",
-                                     "identity.has_national_id":"unsure"})
-    assert saved.status_code==201,saved.text
-    who.update(sub=staff,email=None,email_verified=False)
-    # A question with unresolved applicability cannot be silently counted N/A.
-    from tests.test_application_package import start
-    assert start(client, (org, case, staff), representative=False).status_code in (201, 409, 422)
-    worklist=client.get(f"/api/v1/orgs/{org}/cases/{case}/study-intake/worklist")
-    if worklist.status_code==200:
-        rows={r["path"]:r for r in worklist.json()["questions"]}
-        assert rows["identity.other_family_name"]["condition_state"]=="unresolved"
-        assert rows["identity.national_id_number"]["condition_state"]=="unresolved"
+def test_unsure_parent_does_not_activate_or_clear_subquestions():
+    from app.study_intake import validate_answers
+    answer=validate_answers({**SYNTHETIC_ANSWERS,
+                             "identity.has_other_names":"unsure",
+                             "identity.has_national_id":"unsure"})
+    assert answer["identity.has_other_names"]=="unsure"
+    assert "identity.other_family_name" not in answer
+    assert "identity.national_id_number" not in answer
