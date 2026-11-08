@@ -248,6 +248,25 @@ if(S.tab==='documents')content=panel('Encrypted development documents',`<div cla
     if(pre.blockers.length)html+='<h3>Blocking review items</h3><ul>'+pre.blockers.map(x=>'<li>'+h(x)+'</li>').join('')+'</ul>';
     else html+='<div class="callout">The limited internal preflight has no blocking items. Official PDF preparation and IRCC submission remain unavailable.</div>';
     html+=table(['Mapped field','Verified value','Evidence status'],pre.fields.map(x=>'<tr><td>'+h(x.label)+'<div class="meta">'+h(x.canonical_path)+'</div></td><td>'+h(x.value||'—')+'</td><td>'+h(x.status)+'</td></tr>'));
+    const trace=await api(q()+'/cases/'+S.caseId+'/internal-form-evidence-trace');
+    html+='<h3>Unified evidence-to-form trace</h3>'+
+      '<div class="callout"><strong>'+trace.counts.mapped_fields_with_reviewed_document_evidence+
+      ' / '+trace.counts.mapped_field_count+' internal mapped questions supported by reviewed, scanned documents</strong> · '+
+      trace.counts.unmapped_questionnaire_fields+' questionnaire fields outside the manifest · '+
+      trace.counts.unmapped_repeatable_history_fields+
+      ' repeatable-history fields without a verified official form mapping.</div>'+
+      '<p class="meta">Source recheck required: '+h(trace.source_recheck_required?'Yes':'No')+
+      ' · Trace SHA-256: '+h(trace.snapshot_sha256.slice(0,20))+
+      '… · This is not an official PDF field mapping or an IRCC readiness assessment.</p>';
+    html+='<details><summary>Inspect evidence-to-form statuses</summary>'+
+      table(['Field / origin','Questionnaire','Reviewed document evidence','Form status'],
+       trace.rows.map(row=>'<tr><td>'+h(row.label)+
+        '<div class="meta">'+h(row.canonical_path)+' · '+h(row.area.replaceAll('_',' '))+
+        '</div></td><td>'+h(row.questionnaire_status.replaceAll('_',' '))+
+        '</td><td>'+h(row.evidence_status.replaceAll('_',' '))+
+        '</td><td>'+h(row.manifest_mapping.replaceAll('_',' '))+'</td></tr>'))+
+      '</details>';
+
     html+='<p class="meta">Snapshot SHA-256: '+h(pre.snapshot_sha256.slice(0,20))+'…</p>';
     if(pre.acknowledgement==='stale')html+='<div class="warning-text">The last acknowledgement is stale. Re-review the case after resolving all blockers.</div>';
     if(pre.internal_preflight_status==='reviewable' && pre.acknowledgement!=='current')
