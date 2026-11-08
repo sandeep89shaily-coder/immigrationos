@@ -86,7 +86,8 @@ with engine.connect() as conn:
                          "staff_invitations", "case_application_packages", "package_form_copies",
                          "applicant_profiles", "applicant_family_members", "case_answer_drafts",
                          "applicant_histories", "requirement_decisions", "requirement_document_reviews",
-                         "form_preparation_packets", "imm5476_review_packets"]
+                         "form_preparation_packets", "imm5476_review_packets",
+                         "client_repeatable_proposals", "client_repeatable_decisions"]
         policies = conn.execute(text("""SELECT relname, relrowsecurity, relforcerowsecurity
             FROM pg_class WHERE relname = ANY(:tables)"""), {"tables": tenant_tables}).all()
         assert len(policies) == len(tenant_tables), "RLS FAILED: missing tables"
@@ -110,6 +111,20 @@ with engine.connect() as conn:
             has_table_privilege(current_user, 'imm5476_review_packets', 'DELETE')""")).one()
         assert imm5476_privileges == (True, True, False, False), \
             "RLS FAILED: IMM5476 review checkpoint history must be append-only"
+
+        repeatable_privileges = conn.execute(text("""SELECT
+            has_table_privilege(current_user, 'client_repeatable_proposals', 'SELECT'),
+            has_table_privilege(current_user, 'client_repeatable_proposals', 'INSERT'),
+            has_table_privilege(current_user, 'client_repeatable_proposals', 'UPDATE'),
+            has_table_privilege(current_user, 'client_repeatable_proposals', 'DELETE'),
+            has_table_privilege(current_user, 'client_repeatable_decisions', 'SELECT'),
+            has_table_privilege(current_user, 'client_repeatable_decisions', 'INSERT'),
+            has_table_privilege(current_user, 'client_repeatable_decisions', 'UPDATE'),
+            has_table_privilege(current_user, 'client_repeatable_decisions', 'DELETE')
+        """)).one()
+        assert repeatable_privileges == (True, True, False, False,
+                                         True, True, False, False), \
+            "RLS FAILED: repeatable client submissions or decisions are mutable"
 
         crm_privileges = conn.execute(text("""SELECT
             has_table_privilege(current_user, 'crm_consultation_agreements', 'UPDATE'),

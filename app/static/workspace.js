@@ -138,6 +138,7 @@ async function renderCase(){const [cases,clients,tasks,issues,facts,docs,readine
   }else{
    const result=await api(q()+'/cases/'+S.caseId+'/study-intake');
    const versions=result.submissions;
+   const repeatables=await api(q()+'/cases/'+S.caseId+'/repeatables');
    let worklist=null;
    try{worklist=await api(q()+'/cases/'+S.caseId+'/study-intake/worklist')}
    catch(e){if(!String(e.message).includes('409'))throw e}
@@ -164,6 +165,19 @@ async function renderCase(){const [cases,clients,tasks,issues,facts,docs,readine
       ' · Travel records: '+worklist.history_record_counts.travel+
       '. These are client/staff claims until independently reviewed.</p>'+
       '<p>'+btn('Review applicant and family information','intake:open-applicant','smallbtn')+'</p>';
+   }
+   body+='<h3>Client-submitted family and history records</h3>'+
+    '<p class="meta">'+repeatables.pending_count+
+    ' record(s) awaiting a consultant decision. Accepted records become unverified master claims only.</p>';
+   for(const proposal of repeatables.proposals){
+     const details=Object.entries(proposal.details).map(([key,value])=>
+       h(key.replaceAll('_',' '))+': '+h(value)).join(' · ');
+     const controls=proposal.review_status==='pending'
+      ?btn('Add unverified record','repeatableDecision:'+proposal.id+':accept','smallbtn')+' '+
+       btn('Dismiss','repeatableDecision:'+proposal.id+':dismiss','smallbtn')
+      :chip(proposal.review_status);
+     body+='<div class="item-row"><div style="flex:1;min-width:0"><strong>'+h(proposal.kind)+
+       '</strong><div class="meta">'+details+'</div></div><div class="push">'+controls+'</div></div>';
    }
    if(!versions.length)body+=empty('No questionnaires received','Invite the fictional client through the Portal tab. The questionnaire appears automatically on their study-permit case.');
    else{
@@ -317,6 +331,17 @@ if(action==='seedDemo'){if(!confirm('Create fictional demonstration clients, cas
  if(action==='backCases'||action==='goCases'){S.caseId=null;S.view='cases';return await render()}
  if(action==='goTasks'){S.caseId=null;S.view='tasks';return await render()}
  if(action==='goReview'){S.caseId=null;S.view='review';return await render()}
+ if(action.startsWith('repeatableDecision:')){
+  const [,proposalId,decision]=action.split(':');
+  if(!confirm(decision==='accept'
+    ?'Add this client-reported record to the reusable profile as an UNVERIFIED claim?'
+    :'Dismiss this client-reported record?'))return;
+  await api(q()+'/cases/'+S.caseId+'/repeatables/'+encodeURIComponent(proposalId)+
+    '/decide',{method:'POST',body:{decision}});
+  await render();return toast(decision==='accept'
+    ?'Client record added to profile; independent evidence review still required'
+    :'Client record dismissed');
+ }
  if(action.startsWith('intakeDecision:')){
   const [,submissionId,path,decision]=action.split(':');
   if(!confirm((decision==='accept'?'Accept as an UNVERIFIED pending fact?':'Dismiss this client-reported answer?')+

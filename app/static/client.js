@@ -63,9 +63,39 @@ function updateIntakeConditions(form){
   }
  }
 }
+const repeatableFields={
+ family:[['relationship','Relationship','select','spouse,common_law_partner,child,parent,sibling,other'],['given_name','Given name'],['family_name','Family name'],['date_of_birth','Date of birth','date'],['citizenship','Citizenship']],
+ address:[['start_date','From','date'],['end_date','To (leave blank if current)','date'],['line1','Address line'],['city','City'],['region','Province / region'],['country','Country']],
+ education:[['start_date','From','date'],['end_date','To','date'],['institution','Institution'],['program','Program'],['country','Country']],
+ employment:[['start_date','From','date'],['end_date','To','date'],['employer','Employer'],['position','Position'],['country','Country'],['employment_status','Status','select','employed,self_employed,unemployed,student,other']],
+ travel:[['start_date','Departure','date'],['end_date','Return','date'],['destination_country','Country visited'],['purpose','Purpose']]
+};
+async function renderRepeatables(caseId){
+ const url='/api/v1/client/cases/'+encodeURIComponent(caseId)+'/repeatables';
+ const data=await api(url);
+ const formBlocks=Object.entries(repeatableFields).map(([kind,fields])=>{
+  const controls=fields.map(([key,label,type,values])=>{
+   const required=['given_name','family_name','relationship','start_date','line1','city','country','institution','program','employer','position','employment_status','destination_country','purpose'].includes(key);
+   const input=type==='select'
+    ?'<select name="'+esc(key)+'"'+(required?' required':'')+'><option value="">Select…</option>'+values.split(',').map(v=>'<option value="'+esc(v)+'">'+esc(v.replaceAll('_',' '))+'</option>').join('')+'</select>'
+    :'<input type="'+(type==='date'?'date':'text')+'" name="'+esc(key)+'" maxlength="160"'+(required?' required':'')+'>';
+   return '<div class="intake-field"><label>'+esc(label)+'</label>'+input+'</div>';
+  }).join('');
+  return '<details><summary>Add '+esc(kind)+' record</summary><form data-repeatable="'+esc(caseId)+'" data-kind="'+esc(kind)+'" data-version="'+esc(data.template_version)+'">'+
+    '<div class="intake-grid">'+controls+'</div>'+
+    '<label><input type="checkbox" name="acknowledged_notice" required> I acknowledge that this is a development intake for fictional data and requires consultant review.</label>'+
+    '<p><button type="submit" class="primary">Send '+esc(kind)+' record to consultant</button></p></form></details>';
+ }).join('');
+ const received=data.proposals.map(p=>'<div class="meta">'+esc(p.kind)+' · '+esc(p.review_status)+' · '+esc(new Date(p.created_at).toLocaleString())+'</div>').join('');
+ return '<section class="card"><h2>Family and personal history</h2>'+
+  '<p>Add each family member, address period, educational record, job or trip separately. Entries remain unverified until consultant review and supporting evidence checks.</p>'+
+  '<p class="meta">'+esc(data.notice)+'</p>'+formBlocks+
+  '<h3>Previously sent entries</h3>'+(received||'<p>No entries sent yet.</p>')+'</section>';
+}
+
 async function load(){const cases=await api('/api/v1/client/cases');if(!cases.length){$('cases').innerHTML='<div class="empty">No linked cases yet. Accept an invitation from your consultant to begin.</div>';return}
  const blocks=[];for(const c of cases){const requests=await api(`/api/v1/client/cases/${encodeURIComponent(c.id)}/requests`);
- const intake=c.application_type==='study_permit'?await renderStudyIntake(c.id):'';
+ const intake=c.application_type==='study_permit'?(await renderStudyIntake(c.id))+(await renderRepeatables(c.id)):'';
  blocks.push(`<section class="card"><h2>${esc(c.title)} <span class="status">${esc(c.status)}</span></h2><p>${esc(c.application_type.replaceAll('_',' '))}</p><h3>Requested documents</h3>${requests.length?requests.map(r=>`<div class="request"><div><strong>${esc(r.title)}</strong><div class="meta">${esc(r.instructions)}${r.due_at?' · Due '+esc(new Date(r.due_at).toLocaleDateString()):''}</div></div>${r.status==='open'&&c.status!=='closed'?`<form data-request="${esc(r.id)}" data-case="${esc(c.id)}"><input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.txt" required aria-label="Upload ${esc(r.title)}"><button class="primary" type="submit">Upload</button></form>`:`<span class="status">${esc(r.status)}</span>`}</div>`).join(''):'<p>No outstanding document requests.</p>'}</section>${intake}`)}$('cases').innerHTML=blocks.join('');
  for(const form of $('cases').querySelectorAll('form[data-intake]'))updateIntakeConditions(form);}
 async function init(){try{S.config=await fetch('/app/config',{cache:'no-store'}).then(r=>r.json());$('signin').onclick=login;
@@ -73,6 +103,26 @@ async function init(){try{S.config=await fetch('/app/config',{cache:'no-store'})
  $('refresh').onclick=()=>load().catch(e=>notice(e.message));
  $('claim').onsubmit=async e=>{e.preventDefault();try{await api('/api/v1/client/invitations/accept',{method:'POST',body:{token:$('token').value.trim()}});$('token').value='';notice('Invitation accepted.');await load()}catch(error){notice(error.message)}};
  document.addEventListener('change',e=>{const form=e.target.closest('form[data-intake]');if(form)updateIntakeConditions(form)});
+ document.addEventListener('submit',async e=>{
+  const form=e.target.closest('form[data-repeatable]');
+  if(!form)return;
+  e.preventDefault();
+  const button=form.querySelector('button[type=submit]');button.disabled=true;
+  try{
+   const details={};
+   for(const input of form.querySelectorAll('input[name],select[name]')){
+    if(input.name==='acknowledged_notice')continue;
+    if(input.value.trim())details[input.name]=input.value.trim();
+   }
+   await api('/api/v1/client/cases/'+encodeURIComponent(form.dataset.repeatable)+'/repeatables',{
+    method:'POST',body:{kind:form.dataset.kind,details,
+      template_version:form.dataset.version,
+      acknowledged_notice:form.querySelector('[name=acknowledged_notice]').checked}
+   });
+   notice('Entry sent to your consultant for review. It has not been marked verified.');
+   await load();
+  }catch(error){notice(error.message)}finally{button.disabled=false}
+ });
  document.addEventListener('submit',async e=>{
   const form=e.target.closest('form[data-intake]');
   if(!form)return;
