@@ -259,3 +259,82 @@ def test_versioned_client_conditional_submission_and_review(api):
         json={"decision": "accept"})
     assert result.status_code == 201, result.text
     assert result.json()["fact_status"] == "pending"
+
+
+def test_source_anchored_alias_and_national_id_branch_validation(api):
+    from app.study_intake import validate_answers, questionnaire, TEMPLATE_VERSION
+    from fastapi import HTTPException
+    client, who, factory = api
+    org, case, staff = _open_client(api, "expanded-questionnaire-validation")
+    schema = client.get(_client_url(case)).json()
+    assert schema["template_version"] == TEMPLATE_VERSION
+    assert len(schema["fields"]) == 27
+    for path in ("identity.other_family_name", "identity.national_id_number",
+                 "identity.national_id_country", "finance.expenses_payer_details"):
+        q=next(f for f in schema["fields"] if f["path"]==path)
+        assert q["required"] is True
+        assert q["condition_path"] and q["condition_value"]
+        assert q["source_section"]
+
+    def rejected(extras):
+        try:
+            validate_answers({**SYNTHETIC_ANSWERS, **extras})
+        except HTTPException as error:
+            assert error.status_code == 422
+        else:
+            assert False, "Invalid conditional questionnaire accepted"
+
+    rejected({"identity.has_other_names":"yes"})
+    rejected({"identity.has_other_names":"no", "identity.other_family_name":"Stale"})
+    rejected({"identity.has_national_id":"yes",
+              "identity.national_id_country":"Fictionland"})
+    rejected({"identity.has_national_id":"no", "identity.national_id_number":"hidden"})
+    rejected({"finance.expenses_paid_by":"other"})
+    rejected({"finance.expenses_paid_by":"myself",
+              "finance.expenses_payer_details":"stale"})
+    rejected({"finance.expenses_paid_by":"other",
+              "finance.expenses_payer_details":" "})
+    rejected({"identity.has_national_id":"yes",
+              "identity.national_id_number":"TEST123",
+              "identity.national_id_country":"Fictionland",
+              "identity.national_id_issue_date":"2028-10-01",
+              "identity.national_id_expiry_date":"2028-01-01"})
+    rejected({"finance.tuition_cad":"15.123"})
+    complete={**SYNTHETIC_ANSWERS,
+              "identity.has_other_names":"yes",
+              "identity.other_family_name":"Former",
+              "identity.other_given_name":"Synthetic",
+              "identity.has_national_id":"yes",
+              "identity.national_id_number":"FICTION-123",
+              "identity.national_id_country":"Fictionland",
+              "identity.national_id_issue_date":"2024-01-01",
+              "identity.national_id_expiry_date":"2030-01-01",
+              "finance.expenses_paid_by":"other",
+              "finance.expenses_payer_details":"Synthetic scholarship sponsor"}
+    assert len(validate_answers(complete)) == len(complete)
+    saved = _submit(client, case, fields=complete)
+    assert saved.status_code == 201, saved.text
+    who.update(sub=staff, email=None, email_verified=False)
+    reviewed=client.post(_staff_url(org, case)+f"/{saved.json()['id']}/answers/identity.national_id_number/decide",
+                         json={"decision":"accept"})
+    assert reviewed.status_code == 201, reviewed.text
+    assert reviewed.json()["fact_status"]=="pending"
+    assert client.get(_staff_url(org, case)).json()["submissions"][0]["answers"]["identity.other_family_name"]=="Former"
+
+
+def test_unsure_parent_keeps_conditional_branch_unresolved(api):
+    client, who, factory = api
+    org, case, staff = _open_client(api, "expanded-unsure-conditions")
+    saved=_submit(client,case,fields={**SYNTHETIC_ANSWERS,
+                                     "identity.has_other_names":"unsure",
+                                     "identity.has_national_id":"unsure"})
+    assert saved.status_code==201,saved.text
+    who.update(sub=staff,email=None,email_verified=False)
+    # A question with unresolved applicability cannot be silently counted N/A.
+    from tests.test_application_package import start
+    assert start(client, (org, case, staff), representative=False).status_code in (201, 409, 422)
+    worklist=client.get(f"/api/v1/orgs/{org}/cases/{case}/study-intake/worklist")
+    if worklist.status_code==200:
+        rows={r["path"]:r for r in worklist.json()["questions"]}
+        assert rows["identity.other_family_name"]["condition_state"]=="unresolved"
+        assert rows["identity.national_id_number"]["condition_state"]=="unresolved"
