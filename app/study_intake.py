@@ -30,7 +30,7 @@ from app.workspace_schemas import FactCreate
 
 
 SOURCE = "https://www.canada.ca/en/immigration-refugees-citizenship/services/application/application-forms-guides/imm1294.html"
-TEMPLATE_VERSION = "study-permit-preliminary-intake-2026-11-08"
+TEMPLATE_VERSION = "study-permit-conditional-identity-finance-2026-11-08-v2"
 NOTICE_VERSION = "development-intake-notice-v1"
 NOTICE = (
     "ImmigrationOS is an experimental system for fictitious test cases only. "
@@ -57,6 +57,7 @@ class Question:
     choices: tuple[str, ...] = ()
     condition_path: str | None = None
     condition_value: str | None = None
+    source_section: str | None = None
 
 
 QUESTIONS = (
@@ -64,9 +65,31 @@ QUESTIONS = (
     Question("identity.family_name", "Family name, as on passport", "Identity", required=True),
     Question("identity.date_of_birth", "Date of birth", "Identity", "date", True),
     Question("identity.citizenship", "Country or territory of citizenship", "Identity", required=True),
+    Question("identity.has_other_names", "Have you ever used another name or alias?", "Identity", "choice",
+             choices=("yes", "no", "unsure"), source_section="Personal details / Question 2"),
+    Question("identity.other_family_name", "Other family name(s) used", "Identity",
+             required=True, condition_path="identity.has_other_names", condition_value="yes",
+             source_section="Personal details / Question 2"),
+    Question("identity.other_given_name", "Other given name(s) used (if any)", "Identity",
+             condition_path="identity.has_other_names", condition_value="yes",
+             source_section="Personal details / Question 2"),
     Question("identity.passport_number", "Passport / travel document number", "Passport", required=True),
     Question("identity.passport_issue_date", "Passport issue date", "Passport", "date"),
     Question("identity.passport_expiry_date", "Passport expiry date", "Passport", "date"),
+    Question("identity.has_national_id", "Do you have a national identity document?", "National identity", "choice",
+             choices=("yes", "no", "unsure"), source_section="National identity document / Question 1"),
+    Question("identity.national_id_number", "National identity document number", "National identity",
+             required=True, condition_path="identity.has_national_id", condition_value="yes",
+             source_section="National identity document / Question 2"),
+    Question("identity.national_id_country", "Country or territory issuing national identity document", "National identity",
+             required=True, condition_path="identity.has_national_id", condition_value="yes",
+             source_section="National identity document / Question 3"),
+    Question("identity.national_id_issue_date", "National identity document issue date", "National identity", "date",
+             condition_path="identity.has_national_id", condition_value="yes",
+             source_section="National identity document / Question 4"),
+    Question("identity.national_id_expiry_date", "National identity document expiry date", "National identity", "date",
+             condition_path="identity.has_national_id", condition_value="yes",
+             source_section="National identity document / Question 5"),
     Question("education.institution", "Canadian school / institution name", "Study plans"),
     Question("education.dli_number", "Designated learning institution number", "Study plans"),
     Question("education.program_name", "Proposed course / program", "Study plans"),
@@ -76,6 +99,9 @@ QUESTIONS = (
     Question("finance.available_funds_cad", "Available funds for stay (CAD)", "Finances", "money"),
     Question("finance.expenses_paid_by", "Who is paying for expenses?", "Finances", "choice",
              choices=("myself", "parents", "other", "unsure")),
+    Question("finance.expenses_payer_details", "Explain who will pay your expenses", "Finances",
+             required=True, condition_path="finance.expenses_paid_by", condition_value="other",
+             source_section="Details of intended study / Expenses"),
     Question("history.prior_refusal", "Any previous visa or permit refusal?", "Background", "choice",
              choices=("yes", "no", "unsure")),
     Question("history.prior_refusal_details", "Describe the prior refusal(s)", "Background",
@@ -124,7 +150,8 @@ def validate_answers(answers: dict[str, str]) -> dict[str, str]:
                 number = Decimal(value)
             except InvalidOperation:
                 raise HTTPException(422, "Amount must be a number") from None
-            if not number.is_finite() or number < 0 or number > Decimal("999999999"):
+            if (not number.is_finite() or number < 0 or number > Decimal("999999999")
+                    or number.as_tuple().exponent < -2):
                 raise HTTPException(422, "Amount must be a finite positive CAD amount")
             value = format(number, "f")
         normalized[path] = value
@@ -141,9 +168,10 @@ def validate_answers(answers: dict[str, str]) -> dict[str, str]:
                     normalized.get(q.condition_path) == q.condition_value)
                and not normalized.get(q.path)]
     if missing:
-        raise HTTPException(422, "Complete required identity fields before submitting")
+        raise HTTPException(422, "Complete required active questionnaire fields before submitting")
 
     pairs = (("identity.passport_issue_date", "identity.passport_expiry_date"),
+             ("identity.national_id_issue_date", "identity.national_id_expiry_date"),
              ("education.program_start_date", "education.program_end_date"))
     for begin, end in pairs:
         if normalized.get(begin) and normalized.get(end) and normalized[begin] > normalized[end]:
@@ -164,7 +192,8 @@ def questionnaire():
         "fields": [{
             "path": q.path, "label": q.label, "group": q.group,
             "kind": q.kind, "required": q.required, "choices": list(q.choices),
-            "condition_path": q.condition_path, "condition_value": q.condition_value
+            "condition_path": q.condition_path, "condition_value": q.condition_value,
+            "source_section": q.source_section
         } for q in QUESTIONS],
     }
 

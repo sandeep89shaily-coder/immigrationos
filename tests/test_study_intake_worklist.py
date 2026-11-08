@@ -25,9 +25,9 @@ def test_worklist_exposes_missing_questions_without_values(api):
     assert result.headers["cache-control"] == "no-store"
     body = result.json()
     assert body["form_code"] == "IMM1294"
-    assert body["preliminary_question_count"] == 18
+    assert body["preliminary_question_count"] == 27
     assert body["document_verified_question_count"] == 0
-    assert len(body["questions_still_requiring_evidence_or_review"]) == 18
+    assert len(body["questions_still_requiring_evidence_or_review"]) == 27
     assert {q["status"] for q in body["questions"]} == {"missing_answer", "conditional_applicability_unresolved"}
     assert body["official_pdf_autofill_supported"] is False
     assert all("value" not in row for row in body["questions"])
@@ -100,3 +100,28 @@ def test_conditional_refusal_followup_is_unknown_until_answer_and_not_assumed_no
     assert detail["condition_state"] == "unresolved"
     assert detail["status"] == "conditional_applicability_unresolved"
     assert QUESTION_BY_PATH["history.prior_refusal_details"].condition_value == "yes"
+
+
+def test_alias_national_id_and_expense_payer_conditions_reach_worklist(api):
+    from app.intake_models import StudyIntakeSubmission
+    from app.study_intake import TEMPLATE_VERSION
+    from uuid import uuid4
+    client, _, factory = api
+    org, case, cid, url = setup(api, "expanded-condition-worklist")
+    with factory() as db:
+        db.add(StudyIntakeSubmission(
+            id=uuid4(), org_id=UUID(org), case_id=UUID(case),
+            created_by_sub="fictional-client",
+            template_version=TEMPLATE_VERSION, notice_version="test",
+            answer_sha256="a"*64,
+            answers={"identity.has_other_names":"no",
+                     "identity.has_national_id":"yes",
+                     "finance.expenses_paid_by":"other"}))
+        db.commit()
+    data = client.get(url).json()
+    states = {r["path"]: r for r in data["questions"]}
+    assert states["identity.other_family_name"]["status"] == "not_applicable_to_latest_answer"
+    assert states["identity.national_id_number"]["condition_state"] == "active"
+    assert states["finance.expenses_payer_details"]["status"] == "missing_answer"
+    assert data["preliminary_question_count"] == 27
+    assert data["official_form_complete"] is False

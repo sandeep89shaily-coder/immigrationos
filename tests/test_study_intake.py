@@ -259,3 +259,74 @@ def test_versioned_client_conditional_submission_and_review(api):
         json={"decision": "accept"})
     assert result.status_code == 201, result.text
     assert result.json()["fact_status"] == "pending"
+
+
+def test_source_anchored_alias_and_national_id_branch_validation(api):
+    from app.study_intake import validate_answers, questionnaire, TEMPLATE_VERSION
+    from fastapi import HTTPException
+    client, who, factory = api
+    org, case, staff = _open_client(api, "expanded-questionnaire-validation")
+    schema = client.get(_client_url(case)).json()
+    assert schema["template_version"] == TEMPLATE_VERSION
+    assert len(schema["fields"]) == 27
+    for path in ("identity.other_family_name", "identity.national_id_number",
+                 "identity.national_id_country", "finance.expenses_payer_details"):
+        q=next(f for f in schema["fields"] if f["path"]==path)
+        assert q["required"] is True
+        assert q["condition_path"] and q["condition_value"]
+        assert q["source_section"]
+
+    def rejected(extras):
+        try:
+            validate_answers({**SYNTHETIC_ANSWERS, **extras})
+        except HTTPException as error:
+            assert error.status_code == 422
+        else:
+            assert False, "Invalid conditional questionnaire accepted"
+
+    rejected({"identity.has_other_names":"yes"})
+    rejected({"identity.has_other_names":"no", "identity.other_family_name":"Stale"})
+    rejected({"identity.has_national_id":"yes",
+              "identity.national_id_country":"Fictionland"})
+    rejected({"identity.has_national_id":"no", "identity.national_id_number":"hidden"})
+    rejected({"finance.expenses_paid_by":"other"})
+    rejected({"finance.expenses_paid_by":"myself",
+              "finance.expenses_payer_details":"stale"})
+    rejected({"finance.expenses_paid_by":"other",
+              "finance.expenses_payer_details":" "})
+    rejected({"identity.has_national_id":"yes",
+              "identity.national_id_number":"TEST123",
+              "identity.national_id_country":"Fictionland",
+              "identity.national_id_issue_date":"2028-10-01",
+              "identity.national_id_expiry_date":"2028-01-01"})
+    rejected({"finance.tuition_cad":"15.123"})
+    complete={**SYNTHETIC_ANSWERS,
+              "identity.has_other_names":"yes",
+              "identity.other_family_name":"Former",
+              "identity.other_given_name":"Synthetic",
+              "identity.has_national_id":"yes",
+              "identity.national_id_number":"FICTION-123",
+              "identity.national_id_country":"Fictionland",
+              "identity.national_id_issue_date":"2024-01-01",
+              "identity.national_id_expiry_date":"2030-01-01",
+              "finance.expenses_paid_by":"other",
+              "finance.expenses_payer_details":"Synthetic scholarship sponsor"}
+    assert len(validate_answers(complete)) == len(complete)
+    saved = _submit(client, case, fields=complete)
+    assert saved.status_code == 201, saved.text
+    who.update(sub=staff, email=None, email_verified=False)
+    reviewed=client.post(_staff_url(org, case)+f"/{saved.json()['id']}/answers/identity.national_id_number/decide",
+                         json={"decision":"accept"})
+    assert reviewed.status_code == 201, reviewed.text
+    assert reviewed.json()["fact_status"]=="pending"
+    assert client.get(_staff_url(org, case)).json()["submissions"][0]["answers"]["identity.other_family_name"]=="Former"
+
+
+def test_unsure_parent_does_not_activate_or_clear_subquestions():
+    from app.study_intake import validate_answers
+    answer=validate_answers({**SYNTHETIC_ANSWERS,
+                             "identity.has_other_names":"unsure",
+                             "identity.has_national_id":"unsure"})
+    assert answer["identity.has_other_names"]=="unsure"
+    assert "identity.other_family_name" not in answer
+    assert "identity.national_id_number" not in answer

@@ -58,11 +58,12 @@ def build_worklist(*, case: Case, form_code: str, profile: ApplicantProfile | No
                                  candidate_facts, docs, scans)
         submitted = submission is not None and bool(submission.answers.get(path))
         profile_claim = bool(profile_identity.get(PROFILE_PATHS.get(path, "")))
+        controller = (submission.answers.get(question.condition_path)
+                      if submission is not None and question.condition_path else None)
         condition_state = ("active" if question.condition_path is None else
-                           "unresolved" if submission is None or
-                           submission.answers.get(question.condition_path) not in ("yes", "no") else
-                           "active" if submission.answers.get(question.condition_path) == question.condition_value
-                           else "inactive")
+                           "unresolved" if controller in (None, "", "unsure") else
+                           "active" if controller == question.condition_value else
+                           "inactive")
         if condition_state == "inactive":
             state = "not_applicable_to_latest_answer"
         elif condition_state == "unresolved":
