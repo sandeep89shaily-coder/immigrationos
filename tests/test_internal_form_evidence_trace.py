@@ -21,8 +21,8 @@ def test_uninitialized_case_and_case_access_are_fail_closed(api):
     assert response.headers["cache-control"] == "no-store"
     data = response.json()
     assert data["form_code"] == "IMM1294"
-    assert data["counts"]["mapped_field_count"] == 14
-    assert data["counts"]["unmapped_questionnaire_fields"] == 26
+    assert data["counts"]["mapped_field_count"] == 24
+    assert data["counts"]["unmapped_questionnaire_fields"] == 16
     assert data["counts"]["mapped_fields_with_reviewed_document_evidence"] == 0
     assert data["counts"]["unmapped_repeatable_history_fields"] == 0
     assert data["entire_ircc_form_complete"] is False
