@@ -20,7 +20,7 @@ class ClientRepeatableProposal(Base):
         ForeignKeyConstraint(["org_id", "case_id"], ["cases.org_id", "cases.id"],
                              name="fk_repeatable_proposal_case"),
         UniqueConstraint("org_id", "case_id", "id", name="uq_repeatable_proposal_case_id"),
-        CheckConstraint("kind IN ('family','address','education','employment','travel')",
+        CheckConstraint("kind IN ('family','address','education','employment','travel','previous_relationship','foreign_residence')",
                         name="ck_repeatable_proposal_kind"),
         Index("ix_repeatable_proposals_case", "org_id", "case_id", "created_at"),
     )
