@@ -25,9 +25,9 @@ def test_worklist_exposes_missing_questions_without_values(api):
     assert result.headers["cache-control"] == "no-store"
     body = result.json()
     assert body["form_code"] == "IMM1294"
-    assert body["preliminary_question_count"] == 37
+    assert body["preliminary_question_count"] == 39
     assert body["document_verified_question_count"] == 0
-    assert len(body["questions_still_requiring_evidence_or_review"]) == 37
+    assert len(body["questions_still_requiring_evidence_or_review"]) == 39
     assert {q["status"] for q in body["questions"]} == {"missing_answer", "conditional_applicability_unresolved"}
     assert body["official_pdf_autofill_supported"] is False
     assert all("value" not in row for row in body["questions"])
@@ -123,7 +123,7 @@ def test_alias_national_id_and_expense_payer_conditions_reach_worklist(api):
     assert states["identity.other_family_name"]["status"] == "not_applicable_to_latest_answer"
     assert states["identity.national_id_number"]["condition_state"] == "active"
     assert states["finance.expenses_payer_details"]["status"] == "missing_answer"
-    assert data["preliminary_question_count"] == 37
+    assert data["preliminary_question_count"] == 39
     assert data["official_form_complete"] is False
 
 
@@ -156,3 +156,87 @@ def test_unknown_employment_end_is_not_treated_as_current(api):
     assert "uncovered_period_for_review" not in review["flag_types"]
     assert review["coverage_evaluable"] is False
     assert review["verified_complete"] is False
+
+
+def test_supplemental_crosscheck_disclosure_and_accepted_history_lacks_evidence(api):
+    from app.intake_models import StudyIntakeSubmission
+    from app.applicant_supplemental_history_models import ApplicantSupplementalHistory
+    from app.repeatable_intake_models import ClientRepeatableProposal, ClientRepeatableDecision
+    from app.study_intake import TEMPLATE_VERSION
+    client, _, factory = api
+    org, case, cid, url = setup(api, "supplemental-disclosure-missing-evidence")
+    oid, caseid, clientid = UUID(org), UUID(case), UUID(cid)
+    proposal_id = uuid4()
+    supplemental_id = uuid4()
+    with factory() as db:
+        db.add(StudyIntakeSubmission(
+            org_id=oid, case_id=caseid, created_by_sub="fictional-portal",
+            template_version=TEMPLATE_VERSION, notice_version="test",
+            answer_sha256="a"*64,
+            answers={"history.has_previous_relationships":"yes",
+                     "history.has_foreign_residences":"no"}))
+        db.add(ClientRepeatableProposal(
+            id=proposal_id, org_id=oid, case_id=caseid,
+            kind="previous_relationship",
+            details={"relationship_type":"married","given_name":"Prior",
+                     "family_name":"Fiction","start_date":"2010-01-01",
+                     "end_date":"2015-01-01"},
+            content_sha256="b"*64, template_version="repeatable-test",
+            notice_version="test", created_by_sub="fictional-portal"))
+        db.flush()  # Decision composite FK requires the proposal to exist first.
+        db.add(ClientRepeatableDecision(
+            org_id=oid, case_id=caseid, proposal_id=proposal_id,
+            decision="accept", created_record_id=supplemental_id,
+            reviewed_by_sub="test-owner"))
+        db.add(ApplicantSupplementalHistory(
+            id=supplemental_id, org_id=oid, client_id=clientid,
+            kind="previous_relationship",
+            details={"relationship_type":"married","given_name":"Prior",
+                     "family_name":"Fiction","start_date":"2010-01-01",
+                     "end_date":"2015-01-01"},
+            updated_by_sub="test-owner"))
+        db.commit()
+    result = client.get(url)
+    assert result.status_code == 200, result.text
+    checks = {r["kind"]:r for r in result.json()["supplemental_disclosure_review"]}
+    relationship = checks["previous_relationship"]
+    assert relationship["status"]=="supplemental_evidence_review_required"
+    assert relationship["accepted_record_ids"]==[str(supplemental_id)]
+    assert relationship["evidence"][0]["verified_required_field_count"]==0
+    assert relationship["evidence"][0]["record_is_professionally_verified"] is False
+    assert checks["foreign_residence"]["status"]=="no_disclosure_reported"
+    assert "Fiction" not in str(checks)
+    assert result.json()["official_form_complete"] is False
+
+
+def test_supplemental_pending_proposal_and_no_declaration_disagreement(api):
+    from app.intake_models import StudyIntakeSubmission
+    from app.repeatable_intake_models import ClientRepeatableProposal
+    from app.study_intake import TEMPLATE_VERSION
+    client, _, factory = api
+    org, case, cid, url = setup(api, "supplemental-disclosure-pending-conflict")
+    oid, caseid = UUID(org), UUID(case)
+    proposal_id = uuid4()
+    with factory() as db:
+        db.add(StudyIntakeSubmission(
+            org_id=oid, case_id=caseid, created_by_sub="fictional-portal",
+            template_version=TEMPLATE_VERSION, notice_version="test",
+            answer_sha256="c"*64,
+            answers={"history.has_previous_relationships":"no",
+                     "history.has_foreign_residences":"yes"}))
+        db.add(ClientRepeatableProposal(
+            id=proposal_id, org_id=oid, case_id=caseid,
+            kind="previous_relationship",
+            details={"relationship_type":"married","given_name":"Historical",
+                     "family_name":"Example","start_date":"2010-01-01",
+                     "end_date":"2015-01-01"},
+            content_sha256="d"*64, template_version="repeatable-test",
+            notice_version="test", created_by_sub="fictional-portal"))
+        db.commit()
+    out = client.get(url)
+    assert out.status_code == 200, out.text
+    checks={r["kind"]:r for r in out.json()["supplemental_disclosure_review"]}
+    assert checks["previous_relationship"]["status"]=="disclosure_conflict_review_required"
+    assert checks["previous_relationship"]["pending_proposal_ids"]==[str(proposal_id)]
+    assert checks["foreign_residence"]["status"]=="missing_repeatable_records"
+    assert checks["foreign_residence"]["ircc_form_section_complete"] is False

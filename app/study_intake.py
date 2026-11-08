@@ -30,7 +30,7 @@ from app.workspace_schemas import FactCreate
 
 
 SOURCE = "https://www.canada.ca/en/immigration-refugees-citizenship/services/application/application-forms-guides/imm1294.html"
-TEMPLATE_VERSION = "study-permit-background-review-2026-11-08-v3"
+TEMPLATE_VERSION = "study-permit-supplemental-disclosures-2026-11-08-v4"
 NOTICE_VERSION = "development-intake-notice-v1"
 NOTICE = (
     "ImmigrationOS is an experimental system for fictitious test cases only. "
@@ -154,6 +154,14 @@ QUESTIONS = (
              "Have you ever witnessed or participated in ill treatment of prisoners or civilians, looting or desecration of religious buildings?",
              "Background", "choice", choices=("yes", "no", "unsure"),
              source_section="Background information / Question 6"),
+    Question("history.has_previous_relationships",
+             "Have you previously been married or in a common-law relationship?",
+             "Personal history", "choice", choices=("yes", "no", "unsure"),
+             source_section="Personal details / Previous marriages or common-law relationships"),
+    Question("history.has_foreign_residences",
+             "Have you lived in a country or territory other than your citizenship or current residence for more than six months during the previous five years?",
+             "Personal history", "choice", choices=("yes", "no", "unsure"),
+             source_section="Personal details / Previous countries of residence"),
     Question("planning.filing_location", "Where do you expect to apply?", "Application", "choice",
              choices=("inside_canada", "outside_canada", "unsure")),
 )
