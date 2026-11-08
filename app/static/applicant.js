@@ -7,6 +7,7 @@ async function renderApplicantCase(clientId){
  const historyCorrections=await api(q()+'/cases/'+encodeURIComponent(S.caseId)+'/timeline-clarifications/history-corrections');
  S.historyCorrections=historyCorrections.corrections;
  S.timelineClarifications=clarifications.requests;
+ const supplemental=await api(q()+'/cases/'+encodeURIComponent(S.caseId)+'/repeatables/master-records');
  const [master,drafts,histories,evidence]=await Promise.all([
    api(applicantRoot(clientId)),api(q()+'/cases/'+encodeURIComponent(S.caseId)+'/answer-drafts'),
    api(q()+'/clients/'+encodeURIComponent(clientId)+'/histories'),
@@ -50,6 +51,18 @@ async function renderApplicantCase(clientId){
    html+='<div class="item-row"><div style="flex:1"><div class="item-title">'+h(entry.details.start_date)+' – '+h(entry.details.end_date||'present / not recorded')+'</div><div class="meta">'+summary+'</div><div class="meta">'+(discrepancies?discrepancies+' evidence discrepancy/discrepancies':'Not independently evidence-verified')+'</div></div><div class="push">'+btn('Link evidence','applicant:history-evidence:'+entry.id,'smallbtn')+' '+btn('Edit','applicant:history-edit:'+entry.id,'smallbtn')+'</div></div>';
   }
   html+=btn('Add '+kind,'applicant:history-add:'+kind,'smallbtn');
+ }
+ html+='<h3>Previous relationships and foreign residences</h3>';
+ html+='<p class="meta">These are client-reported historical details, not verified official form fields. Only consultant-accepted entries are shown here.</p>';
+ for(const kind of ['previous_relationship','foreign_residence']){
+   const entries=supplemental.records.filter(r=>r.kind===kind);
+   html+='<h4>'+h(kind.replaceAll('_',' '))+' ('+entries.length+')</h4>';
+   for(const entry of entries){
+     const summary=Object.entries(entry.details).map(([key,value])=>
+       h(key.replaceAll('_',' '))+': '+h(value)).join(' · ');
+     html+='<div class="item-row"><div style="flex:1"><div class="meta">'+summary+
+       '</div><div class="meta">Unverified version '+h(entry.version)+'</div></div></div>';
+   }
  }
  html+='<h3>History timeline questions</h3>';
  html+='<p class="meta">Choose the date range for a manual review. This is not an IRCC-mandated lookback window. An unknown end date remains unresolved.</p>';
