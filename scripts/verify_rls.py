@@ -89,7 +89,7 @@ with engine.connect() as conn:
                          "form_preparation_packets", "imm5476_review_packets",
                          "client_repeatable_proposals", "client_repeatable_decisions",
                          "timeline_clarifications", "timeline_clarification_replies",
-                         "timeline_clarification_decisions"]
+                         "timeline_clarification_decisions", "timeline_history_corrections"]
         policies = conn.execute(text("""SELECT relname, relrowsecurity, relforcerowsecurity
             FROM pg_class WHERE relname = ANY(:tables)"""), {"tables": tenant_tables}).all()
         assert len(policies) == len(tenant_tables), "RLS FAILED: missing tables"
@@ -138,6 +138,15 @@ with engine.connect() as conn:
         """)).one()
         assert timeline_privileges == (False,False,False,False,False,False), \
             "RLS FAILED: timeline clarification history is mutable"
+
+        correction_privileges = conn.execute(text("""SELECT
+            has_table_privilege(current_user, 'timeline_history_corrections', 'SELECT'),
+            has_table_privilege(current_user, 'timeline_history_corrections', 'INSERT'),
+            has_table_privilege(current_user, 'timeline_history_corrections', 'UPDATE'),
+            has_table_privilege(current_user, 'timeline_history_corrections', 'DELETE')
+        """)).one()
+        assert correction_privileges == (True, True, False, False), \
+            "RLS FAILED: correction ledger must be append-only"
 
         crm_privileges = conn.execute(text("""SELECT
             has_table_privilege(current_user, 'crm_consultation_agreements', 'UPDATE'),
