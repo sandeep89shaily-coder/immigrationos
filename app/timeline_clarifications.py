@@ -56,7 +56,7 @@ class Decision(BaseModel):
 
 
 def flag_digest(kind: str, flag: dict) -> str:
-    return sha256(json.dumps({"kind": kind, "flag": flag},
+    return sha256(json.dumps({"kind": kind, "flag": {k: v for k, v in flag.items() if k != "flag_sha256"}},
                 sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
