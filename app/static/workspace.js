@@ -176,6 +176,17 @@ async function renderCase(){const [cases,clients,tasks,issues,facts,docs,readine
         '</div></div>'+chip(item.status)+'</div>';
     }
     body+='</details>';
+    body+='<h3>Relationship and foreign-residence disclosure cross-check</h3>';
+    for(const check of worklist.supplemental_disclosure_review||[]){
+      body+='<div class="item-row"><div style="flex:1;min-width:0"><strong>'+
+        h(check.kind.replaceAll('_',' '))+'</strong><div class="meta">Declaration: '+
+        h(check.declaration_state)+' · '+h(check.status.replaceAll('_',' '))+
+        ' · Accepted historical records: '+h(check.accepted_record_count)+
+        ' · Pending proposals: '+h(check.pending_proposal_ids.length)+
+        '</div><div class="meta">A reviewed client entry is not documentary evidence. '+
+        'All records still require professional assessment.</div></div><div class="push">'+
+        btn('Review histories','intake:open-applicant','smallbtn')+'</div></div>';
+    }
     body+='<h3>Reusable family and history records</h3>'+
       '<p class="meta">Family members: '+worklist.family_member_count+
       ' · Address periods: '+worklist.history_record_counts.address+
