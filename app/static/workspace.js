@@ -331,6 +331,17 @@ if(action==='seedDemo'){if(!confirm('Create fictional demonstration clients, cas
  if(action==='backCases'||action==='goCases'){S.caseId=null;S.view='cases';return await render()}
  if(action==='goTasks'){S.caseId=null;S.view='tasks';return await render()}
  if(action==='goReview'){S.caseId=null;S.view='review';return await render()}
+ if(action.startsWith('repeatableDecision:')){
+  const [,proposalId,decision]=action.split(':');
+  if(!confirm(decision==='accept'
+    ?'Add this client-reported record to the reusable profile as an UNVERIFIED claim?'
+    :'Dismiss this client-reported record?'))return;
+  await api(q()+'/cases/'+S.caseId+'/repeatables/'+encodeURIComponent(proposalId)+
+    '/decide',{method:'POST',body:{decision}});
+  await render();return toast(decision==='accept'
+    ?'Client record added to profile; independent evidence review still required'
+    :'Client record dismissed');
+ }
  if(action.startsWith('intakeDecision:')){
   const [,submissionId,path,decision]=action.split(':');
   if(!confirm((decision==='accept'?'Accept as an UNVERIFIED pending fact?':'Dismiss this client-reported answer?')+
