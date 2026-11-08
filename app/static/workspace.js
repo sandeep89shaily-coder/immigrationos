@@ -268,7 +268,8 @@ if(S.tab==='portal'){
  if(S.tab==='issues')content=panel('Contradictions and resolutions',`<div class="panel-body">${issues.length?issues.map(i=>`<div class="item-row" tabindex="-1" data-pulse-ref="${h(i.id)}"><div class="bullet">!</div><div style="flex:1"><div class="item-title">${h(i.field_path)}</div><div class="meta">${h(i.description)}</div>${i.resolution?`<div class="evidence-preview">Resolution: ${h(i.resolution)}</div>`:''}</div><div class="push">${chip(i.status)} ${i.status==='open'?btn('Resolve','resolveIssue:'+i.id,'smallbtn'):''}</div></div>`).join(''):empty('No conflicts detected','Adding different values for the same fact will create a review issue.')}</div>`);
  if(S.pulseFocus?.caseId===S.caseId&&S.pulseFocus.tab===S.tab){
    content='<div class="callout pulse-location" role="status">From case preparation worklist: '+
-      h(S.pulseFocus.label)+'. Use the existing review controls below; no review decision has been made.</div>'+content;
+      h(S.pulseFocus.label)+'. Use the existing review controls below; no review decision has been made. '+
+      btn('Back to combined worklist','pulse:back','smallbtn')+'</div>'+content;
  }
  $('mainContent').innerHTML=`<div class="page-head"><div><div class="eyebrow"><button class="btn smallbtn" data-action="backCases">← All matters</button> &nbsp; / CASE WORKSPACE</div><h1 class="case-title">${h(c.title)}</h1><div class="detail-meta"><span>${h(c.application_type.replaceAll('_',' '))}</span><span>${h(client?client.first_name+' '+client.last_name:'Client')}</span>${chip(c.status)}</div></div><div>${c.status!=='closed'?btn('Change status','changeStatus','primary'):''}</div></div><div class="pillbar">${tabs.map(t=>`<button class="pilltab ${S.tab===t?'active':''}" data-tab="${t}">${h(t.charAt(0).toUpperCase()+t.slice(1))}${t==='issues'&&issues.filter(i=>i.status==='open').length?' · '+issues.filter(i=>i.status==='open').length:''}</button>`).join('')}</div>${content}`;
 }
@@ -312,6 +313,9 @@ function changeStatus(){const caseObj=S.data.cases.find(x=>x.id===S.caseId);cons
  modal(`<h2>Update case status</h2><p>Status changes are recorded in the audit trail. This does not submit anything to IRCC.</p><form>${selectField('status','Next status',options.map(v=>[v,v.replaceAll('_',' ')]))}${fld('reason','Reason (required)','text','required minlength="10" maxlength="250"')}${actions('Update status')}</form>`,async f=>{await api(q()+`/cases/${S.caseId}/status`,{method:'PATCH',body:values(f)})})}
 async function downloadDoc(id){const doc=S.data.docs.find(x=>x.id===id);const res=await api(q()+`/cases/${S.caseId}/documents/${id}/download`,{raw:true});const blob=await res.blob();const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=doc?.filename||'document';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000)}
 async function eventHandler(e){const tab=e.target.closest('[data-tab]');if(tab){S.tab=tab.dataset.tab;return render().catch(fail)}const cRow=e.target.closest('[data-engagement-client]');if(cRow){S.engagementClientId=cRow.dataset.engagementClient;S.caseId=null;S.prospectId=null;S.view='clients';return render().catch(fail)}const prow=e.target.closest('[data-prospect]');if(prow){S.prospectId=prow.dataset.prospect;S.caseId=null;S.view='crm';return render().catch(fail)}const row=e.target.closest('[data-case]');if(row){S.caseId=row.dataset.case;S.view='cases';S.tab='overview';S.filingContext=null;S.prospectId=null;return render().catch(fail)}const act=e.target.closest('[data-action]');if(!act)return;const action=act.dataset.action;
+ if(action==='pulse:back'){
+   S.tab='intake';S.pulseFocus=null;return render().catch(fail);
+ }
  if(action.startsWith('pulse:open:')){
    const index=Number(action.slice('pulse:open:'.length));
    const item=S.preparationPulse?.worklist_items?.[index];
