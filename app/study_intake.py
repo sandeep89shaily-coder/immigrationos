@@ -30,7 +30,7 @@ from app.workspace_schemas import FactCreate
 
 
 SOURCE = "https://www.canada.ca/en/immigration-refugees-citizenship/services/application/application-forms-guides/imm1294.html"
-TEMPLATE_VERSION = "study-permit-preliminary-intake-2026-11-06"
+TEMPLATE_VERSION = "study-permit-preliminary-intake-2026-11-08"
 NOTICE_VERSION = "development-intake-notice-v1"
 NOTICE = (
     "ImmigrationOS is an experimental system for fictitious test cases only. "
@@ -55,6 +55,8 @@ class Question:
     kind: str = "text"
     required: bool = False
     choices: tuple[str, ...] = ()
+    condition_path: str | None = None
+    condition_value: str | None = None
 
 
 QUESTIONS = (
@@ -76,6 +78,8 @@ QUESTIONS = (
              choices=("myself", "parents", "other", "unsure")),
     Question("history.prior_refusal", "Any previous visa or permit refusal?", "Background", "choice",
              choices=("yes", "no", "unsure")),
+    Question("history.prior_refusal_details", "Describe the prior refusal(s)", "Background",
+             required=True, condition_path="history.prior_refusal", condition_value="yes"),
     Question("planning.filing_location", "Where do you expect to apply?", "Application", "choice",
              choices=("inside_canada", "outside_canada", "unsure")),
 )
@@ -125,7 +129,17 @@ def validate_answers(answers: dict[str, str]) -> dict[str, str]:
             value = format(number, "f")
         normalized[path] = value
 
-    missing = [q.path for q in QUESTIONS if q.required and not normalized.get(q.path)]
+    # Conditional data is rejected when the predicate is not satisfied. This
+    # prevents hidden, stale answers from being submitted accidentally.
+    for q in QUESTIONS:
+        if q.condition_path is not None:
+            active = normalized.get(q.condition_path) == q.condition_value
+            if not active and q.path in normalized:
+                raise HTTPException(422, "Answer belongs to an inactive conditional question")
+    missing = [q.path for q in QUESTIONS if q.required
+               and (q.condition_path is None or
+                    normalized.get(q.condition_path) == q.condition_value)
+               and not normalized.get(q.path)]
     if missing:
         raise HTTPException(422, "Complete required identity fields before submitting")
 
@@ -149,7 +163,8 @@ def questionnaire():
         "submission_supported": False,
         "fields": [{
             "path": q.path, "label": q.label, "group": q.group,
-            "kind": q.kind, "required": q.required, "choices": list(q.choices)
+            "kind": q.kind, "required": q.required, "choices": list(q.choices),
+            "condition_path": q.condition_path, "condition_value": q.condition_value
         } for q in QUESTIONS],
     }
 
