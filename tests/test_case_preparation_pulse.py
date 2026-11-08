@@ -157,7 +157,7 @@ def test_pulse_destinations_are_existing_case_tabs_and_scoped_record_refs():
 def test_occupation_lookback_routes_to_applicant_without_implying_readiness():
     result=base(worklist={
         "questions":[],
-        "preliminary_question_count":37,
+        "preliminary_question_count":39,
         "document_verified_question_count":0,
         "employment_history_review":{
             "status":"timeline_clarifications_needed",
