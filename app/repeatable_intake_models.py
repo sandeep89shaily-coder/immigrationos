@@ -20,14 +20,14 @@ class ClientRepeatableProposal(Base):
         ForeignKeyConstraint(["org_id", "case_id"], ["cases.org_id", "cases.id"],
                              name="fk_repeatable_proposal_case"),
         UniqueConstraint("org_id", "case_id", "id", name="uq_repeatable_proposal_case_id"),
-        CheckConstraint("kind IN ('family','address','education','employment','travel')",
+        CheckConstraint("kind IN ('family','address','education','employment','travel','previous_relationship','foreign_residence')",
                         name="ck_repeatable_proposal_kind"),
         Index("ix_repeatable_proposals_case", "org_id", "case_id", "created_at"),
     )
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     org_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
     case_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
-    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
     details: Mapped[dict] = mapped_column(JSON, nullable=False)
     content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     template_version: Mapped[str] = mapped_column(String(80), nullable=False)
