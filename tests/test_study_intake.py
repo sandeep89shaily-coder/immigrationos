@@ -268,7 +268,7 @@ def test_source_anchored_alias_and_national_id_branch_validation(api):
     org, case, staff = _open_client(api, "expanded-questionnaire-validation")
     schema = client.get(_client_url(case)).json()
     assert schema["template_version"] == TEMPLATE_VERSION
-    assert len(schema["fields"]) == 37
+    assert len(schema["fields"]) == 39
     for path in ("identity.other_family_name", "identity.national_id_number",
                  "identity.national_id_country", "finance.expenses_payer_details"):
         q=next(f for f in schema["fields"] if f["path"]==path)
@@ -339,7 +339,7 @@ def test_official_background_declarations_and_inactive_details(api):
     org, case, staff = _open_client(api, "background-declaration-case")
     schema=client.get(_client_url(case)).json()
     assert schema["template_version"] == TEMPLATE_VERSION
-    assert len(schema["fields"]) == 37
+    assert len(schema["fields"]) == 39
     controls = [
         "background.unauthorized_stay_study_work",
         "background.previous_canadian_application",
