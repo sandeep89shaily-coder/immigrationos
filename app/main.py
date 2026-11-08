@@ -221,6 +221,9 @@ app.include_router(applicant_history_router)
 app.include_router(evidence_router)
 app.include_router(study_intake_client_router)
 app.include_router(study_intake_staff_router)
+from app.repeatable_intake import client_router as repeatable_client_router, staff_router as repeatable_staff_router
+app.include_router(repeatable_client_router)
+app.include_router(repeatable_staff_router)
 from app.review_snapshots import router as review_snapshots_router
 app.include_router(review_snapshots_router)
 STATIC_DIR = Path(__file__).resolve().parent / 'static'
