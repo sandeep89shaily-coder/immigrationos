@@ -30,16 +30,17 @@ def add_fact(api, org, case, path, value):
     return doc
 
 
-def test_empty_case_preview_reports_six_gaps_and_never_exports(api):
+def test_empty_case_preview_reports_fourteen_gaps_and_never_exports(api):
     client, _, _ = api
     org, case, _ = make_case(api, "generic-evidence-missing")
     result = client.get(endpoint(org, case))
     assert result.status_code == 200, result.text
     assert result.headers["cache-control"] == "no-store"
     data = result.json()
-    assert data["internal_preview_field_count"] == 6
+    assert data["internal_preview_field_count"] == 14
     assert data["verified_preview_field_count"] == 0
-    assert data["missing_preview_field_count"] == 6
+    assert data["missing_preview_field_count"] == 14
+    assert data["guided_source_field_count"] == 8
     assert data["entire_official_form_complete"] is False
     assert data["pdf_export_available"] is False
     assert data["submission_supported"] is False
@@ -100,3 +101,51 @@ def test_contradictory_evidence_is_not_silently_selected(api, monkeypatch):
     assert field["status"] == "conflicting_evidence"
     assert field["value"] is None
     assert "unresolved_or_unsafe_evidence" in data["blockers"]
+
+
+@pytest.mark.parametrize(("path", "value", "expected"), [
+    ("identity.passport_issue_date", "2024-02-29", "verified_source_value"),
+    ("identity.passport_expiry_date", "2024-02-30", "invalid_evidence_value"),
+    ("education.program_start_date", "2027-01-15", "verified_source_value"),
+    ("education.program_end_date", "not-a-date", "invalid_evidence_value"),
+    ("finance.tuition_cad", "12000.00", "verified_source_value"),
+    ("finance.available_funds_cad", "-1", "invalid_evidence_value"),
+    ("finance.available_funds_cad", "NaN", "invalid_evidence_value"),
+    ("finance.tuition_cad", "125.999", "invalid_evidence_value"),
+    ("education.dli_number", "O123456789012", "verified_source_value"),
+    ("education.dli_number", "bad space", "invalid_evidence_value"),
+])
+def test_source_guided_fields_never_promote_invalid_values(api, monkeypatch,
+                                                           path, value, expected):
+    client, _, _ = api
+    org, case, _ = make_case(api, "guided-test-" + str(uuid4())[:9])
+    doc = add_fact(api, org, case, path, value)
+    monkeypatch.setattr(coverage, "scan_status_by_document",
+                        lambda *args: {doc: "cleared"})
+    data = client.get(endpoint(org, case)).json()
+    field = next(x for x in data["fields"] if x["canonical_path"] == path)
+    assert field["status"] == expected
+    assert field["value"] == (value if expected == "verified_source_value" else None)
+    assert field["source_url"].startswith("https://www.canada.ca/")
+    assert field["source_section"]
+    assert data["entire_official_form_complete"] is False
+    assert data["pdf_export_available"] is False
+    assert data["submission_supported"] is False
+
+
+def test_source_guided_document_requires_scan_clearance(api, monkeypatch):
+    client, _, _ = api
+    org, case, _ = make_case(api, "guided-scan")
+    doc = add_fact(api, org, case, "finance.tuition_cad", "10000.00")
+    blocked = client.get(endpoint(org, case)).json()
+    field = next(row for row in blocked["fields"]
+                 if row["canonical_path"] == "finance.tuition_cad")
+    assert field["status"] == "source_scan_not_cleared"
+    assert field["value"] is None
+    monkeypatch.setattr(coverage, "scan_status_by_document",
+                        lambda *args: {doc: "cleared"})
+    cleared = client.get(endpoint(org, case)).json()
+    row = next(r for r in cleared["fields"]
+               if r["canonical_path"] == "finance.tuition_cad")
+    assert row["status"] == "verified_source_value"
+    assert cleared["snapshot_sha256"] != blocked["snapshot_sha256"]
