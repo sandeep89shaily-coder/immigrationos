@@ -7,6 +7,13 @@ async function renderApplicantCase(clientId){
    api(applicantRoot(clientId)),api(q()+'/cases/'+encodeURIComponent(S.caseId)+'/answer-drafts'),
    api(q()+'/clients/'+encodeURIComponent(clientId)+'/histories'),
    api(q()+'/cases/'+encodeURIComponent(S.caseId)+'/history-evidence-review')]);
+ if(S.timelineAudit&&S.timelineAudit.caseId===S.caseId){
+   const previous=S.timelineAudit.data;
+   const query='?start_date='+encodeURIComponent(previous.window_start)+
+     '&end_date='+encodeURIComponent(previous.window_end);
+   S.timelineAudit.data=await api(q()+'/cases/'+encodeURIComponent(S.caseId)+
+     '/history-timeline-audit'+query);
+ }
  S.applicantClientId=clientId;
  S.applicantMaster=master;
  S.applicantHistories=histories.records;
@@ -39,6 +46,24 @@ async function renderApplicantCase(clientId){
    html+='<div class="item-row"><div style="flex:1"><div class="item-title">'+h(entry.details.start_date)+' – '+h(entry.details.end_date||'present / not recorded')+'</div><div class="meta">'+summary+'</div><div class="meta">'+(discrepancies?discrepancies+' evidence discrepancy/discrepancies':'Not independently evidence-verified')+'</div></div><div class="push">'+btn('Link evidence','applicant:history-evidence:'+entry.id,'smallbtn')+' '+btn('Edit','applicant:history-edit:'+entry.id,'smallbtn')+'</div></div>';
   }
   html+=btn('Add '+kind,'applicant:history-add:'+kind,'smallbtn');
+ }
+ html+='<h3>History timeline questions</h3>';
+ html+='<p class="meta">Choose the date range for a manual review. This is not an IRCC-mandated lookback window. An unknown end date remains unresolved.</p>';
+ html+= '<p>'+btn('Check selected timeline','applicant:timeline','smallbtn')+'</p>';
+ if(S.timelineAudit&&S.timelineAudit.caseId===S.caseId){
+   const audit=S.timelineAudit.data;
+   html+='<div class="callout">'+audit.total_flags+' date question(s) from '+h(audit.window_start)+' to '+h(audit.window_end)+
+     '. Dates and relevance need independent document review.</div>';
+   for(const kind of ['address','employment','education']){
+     const category=audit.categories[kind];
+     html+='<h4>'+h(kind)+' · '+category.flags.length+' question(s)</h4>';
+     for(const item of category.flags){
+       html+='<div class="item-row"><div style="flex:1"><strong>'+h(item.type.replaceAll('_',' '))+'</strong>'+
+       '<div class="meta">'+h(item.start_date||'')+(item.end_date?' to '+h(item.end_date):'')+
+       (item.record_ids?.length?' · Record IDs: '+item.record_ids.map(h).join(', '):'')+'</div></div></div>';
+     }
+     if(!category.flags.length)html+='<p class="meta">No mechanical date flags for this selected window. Not proof of a complete or verified history.</p>';
+   }
  }
  html+='<h3>Case-specific answer snapshots</h3><p class="meta">These snapshots preserve the source profile version. Every answer remains unverified until separately supported by source evidence and checked by staff.</p>';
  html+=btn('Create internal form-answer draft','applicant:draft','smallbtn');
@@ -111,6 +136,20 @@ async function applicantAction(action){
   const existing=S.applicantHistories?.find(row=>row.id===action.split(':')[2]);
   if(!existing)return toast('Reload this profile');
   return applicantHistoryEditor(existing.kind,existing);
+ }
+ if(action==='applicant:timeline'){
+   modal('<h2>Check history dates</h2>'+
+     '<p>Select the inclusive date range to check. This is an internal consistency check, not an IRCC history requirement.</p><form>'+
+     fld('start_date','Start date','date','required')+
+     fld('end_date','End date','date','required')+
+     actions('Check date gaps and overlaps')+'</form>',async form=>{
+       const v=values(form);
+       const query='?start_date='+encodeURIComponent(v.start_date)+'&end_date='+encodeURIComponent(v.end_date);
+       const data=await api(q()+'/cases/'+encodeURIComponent(S.caseId)+'/history-timeline-audit'+query);
+       S.timelineAudit={caseId:S.caseId,data};
+       await render();
+   });
+   return;
  }
  if(action==='applicant:draft'){
    if(!confirm('Create a new immutable INTERNAL answer snapshot? This does not create an official PDF.'))return;
