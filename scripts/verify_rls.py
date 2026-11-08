@@ -87,7 +87,9 @@ with engine.connect() as conn:
                          "applicant_profiles", "applicant_family_members", "case_answer_drafts",
                          "applicant_histories", "requirement_decisions", "requirement_document_reviews",
                          "form_preparation_packets", "imm5476_review_packets",
-                         "client_repeatable_proposals", "client_repeatable_decisions"]
+                         "client_repeatable_proposals", "client_repeatable_decisions",
+                         "timeline_clarifications", "timeline_clarification_replies",
+                         "timeline_clarification_decisions"]
         policies = conn.execute(text("""SELECT relname, relrowsecurity, relforcerowsecurity
             FROM pg_class WHERE relname = ANY(:tables)"""), {"tables": tenant_tables}).all()
         assert len(policies) == len(tenant_tables), "RLS FAILED: missing tables"
@@ -125,6 +127,17 @@ with engine.connect() as conn:
         assert repeatable_privileges == (True, True, False, False,
                                          True, True, False, False), \
             "RLS FAILED: repeatable client submissions or decisions are mutable"
+
+        timeline_privileges = conn.execute(text("""SELECT
+            has_table_privilege(current_user,'timeline_clarifications','UPDATE'),
+            has_table_privilege(current_user,'timeline_clarifications','DELETE'),
+            has_table_privilege(current_user,'timeline_clarification_replies','UPDATE'),
+            has_table_privilege(current_user,'timeline_clarification_replies','DELETE'),
+            has_table_privilege(current_user,'timeline_clarification_decisions','UPDATE'),
+            has_table_privilege(current_user,'timeline_clarification_decisions','DELETE')
+        """)).one()
+        assert timeline_privileges == (False,False,False,False,False,False), \
+            "RLS FAILED: timeline clarification history is mutable"
 
         crm_privileges = conn.execute(text("""SELECT
             has_table_privilege(current_user, 'crm_consultation_agreements', 'UPDATE'),

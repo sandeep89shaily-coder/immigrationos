@@ -3,6 +3,8 @@
 const applicantRoot=id=>q()+'/clients/'+encodeURIComponent(id)+'/applicant';
 
 async function renderApplicantCase(clientId){
+ const clarifications=await api(q()+'/cases/'+encodeURIComponent(S.caseId)+'/timeline-clarifications');
+ S.timelineClarifications=clarifications.requests;
  const [master,drafts,histories,evidence]=await Promise.all([
    api(applicantRoot(clientId)),api(q()+'/cases/'+encodeURIComponent(S.caseId)+'/answer-drafts'),
    api(q()+'/clients/'+encodeURIComponent(clientId)+'/histories'),
@@ -60,10 +62,25 @@ async function renderApplicantCase(clientId){
      for(const item of category.flags){
        html+='<div class="item-row"><div style="flex:1"><strong>'+h(item.type.replaceAll('_',' '))+'</strong>'+
        '<div class="meta">'+h(item.start_date||'')+(item.end_date?' to '+h(item.end_date):'')+
-       (item.record_ids?.length?' · Record IDs: '+item.record_ids.map(h).join(', '):'')+'</div></div></div>';
+       (item.record_ids?.length?' · Record IDs: '+item.record_ids.map(h).join(', '):'')+
+       '</div></div><div class="push">'+
+       btn('Request clarification','applicant:clarify:'+kind+':'+item.flag_sha256,'smallbtn')+
+       '</div></div>';
      }
      if(!category.flags.length)html+='<p class="meta">No mechanical date flags for this selected window. Not proof of a complete or verified history.</p>';
    }
+ }
+ html+='<h3>Client timeline clarifications</h3>';
+ for(const request of clarifications.requests){
+   html+='<div class="item-row"><div style="flex:1;min-width:0"><strong>'+h(request.kind)+
+     ' · '+h(request.flag_type.replaceAll('_',' '))+'</strong>'+
+     '<div class="meta">'+h(request.question)+'</div>'+
+     '<div class="meta">Status: '+h(request.status.replaceAll('_',' '))+
+     (request.reply?' · Client response: '+h(request.reply):'')+'</div></div>'+
+     (request.status==='awaiting_staff'?'<div class="push">'+
+       btn('Reviewed','applicant:clarify-decision:'+request.id+':reviewed','smallbtn')+' '+
+       btn('More information needed','applicant:clarify-decision:'+request.id+':needs_more_information','smallbtn')+
+       '</div>':'')+'</div>';
  }
  html+='<h3>Case-specific answer snapshots</h3><p class="meta">These snapshots preserve the source profile version. Every answer remains unverified until separately supported by source evidence and checked by staff.</p>';
  html+=btn('Create internal form-answer draft','applicant:draft','smallbtn');
@@ -136,6 +153,31 @@ async function applicantAction(action){
   const existing=S.applicantHistories?.find(row=>row.id===action.split(':')[2]);
   if(!existing)return toast('Reload this profile');
   return applicantHistoryEditor(existing.kind,existing);
+ }
+ if(action.startsWith('applicant:clarify:')){
+   if(!S.timelineAudit||S.timelineAudit.caseId!==S.caseId)return toast('Run a current timeline audit first');
+   const [, , kind, fingerprint]=action.split(':');
+   const audit=S.timelineAudit.data;
+   const flag=audit.categories[kind]?.flags.find(x=>x.flag_sha256===fingerprint);
+   if(!flag)return toast('Refresh timeline and select a current finding');
+   modal('<h2>Request client clarification</h2><p>The applicant can reply through their secure case portal. This does not edit or verify any history.</p><form>'+
+     '<div class="form-field"><label>Question to applicant</label><textarea name="question" rows="4" required minlength="12" maxlength="600"></textarea></div>'+
+     actions('Send clarification')+'</form>',async form=>{
+       const question=form.elements.namedItem('question').value.trim();
+       await api(q()+'/cases/'+encodeURIComponent(S.caseId)+'/timeline-clarifications',{
+         method:'POST',body:{question,kind,flag_sha256:fingerprint,
+           snapshot_sha256:audit.snapshot_sha256,
+           start_date:audit.window_start,end_date:audit.window_end}});
+       await render();return toast('Clarification requested from client');
+   });return;
+ }
+ if(action.startsWith('applicant:clarify-decision:')){
+   const [, , id, decision]=action.split(':');
+   if(!confirm('Record a human review decision? This will not change applicant history or verify evidence.'))return;
+   await api(q()+'/cases/'+encodeURIComponent(S.caseId)+
+     '/timeline-clarifications/'+encodeURIComponent(id)+'/decide',{
+       method:'POST',body:{decision}});
+   await render();return toast('Review recorded; original history unchanged');
  }
  if(action==='applicant:timeline'){
    modal('<h2>Check history dates</h2>'+
