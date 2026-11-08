@@ -133,8 +133,25 @@ async function renderCase(){const [cases,clients,tasks,issues,facts,docs,readine
  if(S.tab==='package')content=await renderPackage();
  if(S.tab==='applicant')content=await renderApplicantCase(c.client_id);
  if(S.tab==='intake'){
+  const pulse=await api(q()+'/cases/'+S.caseId+'/preparation-pulse');
+  const pulseCounts=Object.entries(pulse.area_counts).filter(([,value])=>value>0)
+    .map(([key,value])=>h(key.replaceAll('_',' '))+': '+value).join(' · ');
+  const pulseList=pulse.worklist_items.map(item=>
+    '<div class="item-row"><div style="flex:1;min-width:0"><strong>'+
+    h(item.label)+'</strong><div class="meta">'+h(item.area.replaceAll('_',' '))+
+    ' · '+h(item.status.replaceAll('_',' '))+
+    (item.reference_id?' · Ref '+h(item.reference_id):'')+
+    '</div></div></div>').join('');
+  const pulseHtml='<h3>Case preparation pulse</h3>'+
+    '<div class="callout"><strong>'+pulse.unresolved_count+
+    ' preliminary follow-ups</strong> · '+(pulseCounts||'No tracked issues')+
+    '. This is an internal worklist, not IRCC readiness or eligibility.</div>'+
+    '<details><summary>Review combined preparation worklist</summary>'+
+      (pulseList||'<p>No tracked gaps in this partial internal worklist; official filing is still unsupported.</p>')+
+    '</details>';
+
   if(c.application_type!=='study_permit'){
-   content=panel('Client intake','<div class="panel-body"><div class="callout">The preliminary questionnaire currently supports study permit matters only.</div></div>');
+   content=panel('Client intake','<div class="panel-body">'+pulseHtml+'<div class="callout">The preliminary questionnaire currently supports study permit matters only.</div></div>');
   }else{
    const result=await api(q()+'/cases/'+S.caseId+'/study-intake');
    const versions=result.submissions;
@@ -142,7 +159,7 @@ async function renderCase(){const [cases,clients,tasks,issues,facts,docs,readine
    let worklist=null;
    try{worklist=await api(q()+'/cases/'+S.caseId+'/study-intake/worklist')}
    catch(e){if(!String(e.message).includes('409'))throw e}
-   let body='<div class="callout">Client questionnaire answers are self-reported. Accepting an answer adds a PENDING fact. Review against the original document before professional verification. This is not an official IRCC form.</div>';
+   let body=pulseHtml+'<div class="callout">Client questionnaire answers are self-reported. Accepting an answer adds a PENDING fact. Review against the original document before professional verification. This is not an official IRCC form.</div>';
    if(worklist){
     body+='<h3>Questionnaire and verified-evidence gaps</h3>'+
       '<div class="callout"><strong>'+worklist.document_verified_question_count+
