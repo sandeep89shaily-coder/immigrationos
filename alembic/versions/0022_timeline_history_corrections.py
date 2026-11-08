@@ -1,12 +1,12 @@
 """Append-only timeline-to-history correction provenance.
 
-Revision ID: 0022_timeline_history_corrections
+Revision ID: 0022_history_corrections
 Revises: 0021_timeline_clarifications
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision="0022_timeline_history_corrections"
+revision="0022_history_corrections"
 down_revision="0021_timeline_clarifications"
 branch_labels=None
 depends_on=None
