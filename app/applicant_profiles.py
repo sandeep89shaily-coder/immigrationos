@@ -15,6 +15,7 @@ from app.applicant_models import ApplicantProfile, FamilyMember, CaseAnswerDraft
 from app.applicant_history_models import ApplicantHistory
 from app.db import get_db
 from app.ircc_registry import REGISTRY
+from app.form_manifest import MANIFESTS
 from app.main import record_event
 from app.models import Case, Client
 from app.package_models import CaseApplicationPackage
@@ -155,6 +156,8 @@ def build_answer_draft(org_id: UUID, case_id: UUID,
     case = db.scalar(select(Case).where(Case.org_id == org_id, Case.id == case_id))
     if case is None:
         raise HTTPException(404, "Case not available")
+    if case.status == "closed":
+        raise HTTPException(409, "Closed matters cannot create new answer drafts")
     pkg = db.scalar(select(CaseApplicationPackage).where(
         CaseApplicationPackage.org_id == org_id, CaseApplicationPackage.case_id == case_id))
     if pkg is None:
@@ -168,8 +171,16 @@ def build_answer_draft(org_id: UUID, case_id: UUID,
     histories = db.scalars(select(ApplicantHistory).where(
         ApplicantHistory.org_id == org_id, ApplicantHistory.client_id == case.client_id
     ).order_by(ApplicantHistory.kind, ApplicantHistory.id)).all()
-    history_snapshot = {"records": [{"id": str(row.id), "kind": row.kind,
-        "version": row.version, "details": row.details} for row in histories]}
+    family = db.scalars(select(FamilyMember).where(
+        FamilyMember.org_id == org_id, FamilyMember.client_id == case.client_id
+    ).order_by(FamilyMember.id)).all()
+    history_snapshot = {
+        "records": [{"id": str(row.id), "kind": row.kind,
+                     "version": row.version, "details": row.details}
+                    for row in histories],
+        "family": [_family_json(row) for row in family],
+        "manifest_sha256": MANIFESTS[form_code].digest,
+    }
     identity = profile.data.get("identity", {})
     # Canonical paths and observed worklist labels, NOT PDF field identifiers.
     mapping = {
@@ -194,10 +205,31 @@ def build_answer_draft(org_id: UUID, case_id: UUID,
                  {"draft_id": str(draft.id), "form_code": form_code,
                   "profile_version": profile.version})
     db.commit()
-    return _draft_json(draft)
+    return _draft_json(draft, source_freshness="current")
 
 
-def _draft_json(item: CaseAnswerDraft) -> dict:
+def _draft_freshness(item: CaseAnswerDraft, profile: ApplicantProfile | None,
+                     histories: list[ApplicantHistory],
+                     family: list[FamilyMember], expected_form: str) -> str:
+    """Legacy drafts are unknown, not silently current."""
+    snapshot = item.history_snapshot
+    if not isinstance(snapshot, dict) or not all(
+            k in snapshot for k in ("family", "records", "manifest_sha256")):
+        return "unknown_legacy"
+    if profile is None or item.profile_version != profile.version:
+        return "stale"
+    if item.form_code != expected_form or item.source_revision != REGISTRY[expected_form].revision_label:
+        return "stale"
+    if snapshot["manifest_sha256"] != MANIFESTS[expected_form].digest:
+        return "stale"
+    historical = {row["id"]: row["version"] for row in snapshot["records"]}
+    current_history = {str(row.id): row.version for row in histories}
+    relatives = {row["id"]: row["version"] for row in snapshot["family"]}
+    current_family = {str(row.id): row.version for row in family}
+    return "current" if historical == current_history and relatives == current_family else "stale"
+
+
+def _draft_json(item: CaseAnswerDraft, source_freshness: str = "unknown_legacy") -> dict:
     return {
         "id": str(item.id), "case_id": str(item.case_id),
         "form_code": item.form_code, "source_revision": item.source_revision,
@@ -206,6 +238,9 @@ def _draft_json(item: CaseAnswerDraft) -> dict:
         "unresolved_fields": item.unresolved_fields,
         "created_at": item.created_at.isoformat(),
         "status": "unverified_internal_draft",
+        "source_freshness": source_freshness,
+        "family_snapshot": item.history_snapshot.get("family", []),
+        "manifest_sha256": item.history_snapshot.get("manifest_sha256"),
         "official_pdf_autofill_supported": False,
         "official_validation_verified": False, "submission_supported": False,
     }
@@ -214,7 +249,25 @@ def _draft_json(item: CaseAnswerDraft) -> dict:
 @router.get("/cases/{case_id}/answer-drafts")
 def list_answer_drafts(org_id: UUID, case_id: UUID, db: Session = Depends(get_db),
                        access: OrgAccess = Depends(get_org_access)):
+    case = db.scalar(select(Case).where(Case.org_id == org_id, Case.id == case_id))
+    if case is None:
+        raise HTTPException(404, "Case not available")
     records = db.scalars(select(CaseAnswerDraft).where(
         CaseAnswerDraft.org_id == org_id, CaseAnswerDraft.case_id == case_id
     ).order_by(CaseAnswerDraft.created_at.desc(), CaseAnswerDraft.id.desc()).limit(50)).all()
-    return [_draft_json(row) for row in records]
+    if not records:
+        return []
+    package = db.scalar(select(CaseApplicationPackage).where(
+        CaseApplicationPackage.org_id == org_id, CaseApplicationPackage.case_id == case_id))
+    expected_form = ("IMM5709" if package and package.filing_context == "inside_canada"
+                     else "IMM1294" if package and package.filing_context == "outside_canada"
+                     else None)
+    profile = db.scalar(select(ApplicantProfile).where(
+        ApplicantProfile.org_id == org_id, ApplicantProfile.client_id == case.client_id))
+    histories = db.scalars(select(ApplicantHistory).where(
+        ApplicantHistory.org_id == org_id, ApplicantHistory.client_id == case.client_id)).all()
+    family = db.scalars(select(FamilyMember).where(
+        FamilyMember.org_id == org_id, FamilyMember.client_id == case.client_id)).all()
+    return [_draft_json(row, source_freshness=(
+        _draft_freshness(row, profile, histories, family, expected_form)
+        if expected_form is not None else "stale")) for row in records]
