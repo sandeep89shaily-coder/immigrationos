@@ -25,10 +25,10 @@ def test_worklist_exposes_missing_questions_without_values(api):
     assert result.headers["cache-control"] == "no-store"
     body = result.json()
     assert body["form_code"] == "IMM1294"
-    assert body["preliminary_question_count"] == 17
+    assert body["preliminary_question_count"] == 18
     assert body["document_verified_question_count"] == 0
-    assert len(body["questions_still_requiring_evidence_or_review"]) == 17
-    assert {q["status"] for q in body["questions"]} == {"missing_answer"}
+    assert len(body["questions_still_requiring_evidence_or_review"]) == 18
+    assert {q["status"] for q in body["questions"]} == {"missing_answer", "conditional_applicability_unresolved"}
     assert body["official_pdf_autofill_supported"] is False
     assert all("value" not in row for row in body["questions"])
 
@@ -88,3 +88,15 @@ def test_member_without_case_assignment_cannot_read_worklist(api):
     assert client.get(url).status_code == 404
     who["sub"] = "unrelated-user"
     assert client.get(url).status_code == 404
+
+
+def test_conditional_refusal_followup_is_unknown_until_answer_and_not_assumed_no(api):
+    from app.study_intake import QUESTION_BY_PATH
+    client, _, _ = api
+    org, case, cid, url = setup(api, "intake-conditional-unresolved")
+    result = client.get(url).json()
+    detail = next(q for q in result["questions"]
+                  if q["path"] == "history.prior_refusal_details")
+    assert detail["condition_state"] == "unresolved"
+    assert detail["status"] == "conditional_applicability_unresolved"
+    assert QUESTION_BY_PATH["history.prior_refusal_details"].condition_value == "yes"

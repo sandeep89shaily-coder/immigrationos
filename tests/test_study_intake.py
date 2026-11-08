@@ -213,3 +213,49 @@ def test_client_submission_invalidates_preflight_and_evidence_review_fingerprint
     assert after_review.json()["case_sha256"] != original_review_sha
     assert any("questionnaire answers await consultant decisions" in reason.lower()
                for reason in after_form.json()["blockers"])
+
+
+def test_prior_refusal_requires_details_only_when_yes(api):
+    from app.study_intake import validate_answers, questionnaire
+    from fastapi import HTTPException
+    schema = questionnaire()
+    details = next(q for q in schema["fields"]
+                   if q["path"] == "history.prior_refusal_details")
+    assert details["condition_path"] == "history.prior_refusal"
+    assert details["condition_value"] == "yes"
+    assert details["required"] is True
+    yes = {**SYNTHETIC_ANSWERS, "history.prior_refusal": "yes"}
+    try:
+        validate_answers(yes)
+        assert False, "A prior refusal with no details cannot be accepted"
+    except HTTPException as exc:
+        assert exc.status_code == 422
+    accepted = validate_answers({
+        **yes, "history.prior_refusal_details": "Fictional refusal in 2023"})
+    assert accepted["history.prior_refusal_details"] == "Fictional refusal in 2023"
+    for answer in ("no", "unsure"):
+        try:
+            validate_answers({
+                **SYNTHETIC_ANSWERS, "history.prior_refusal": answer,
+                "history.prior_refusal_details": "Stale hidden detail"})
+            assert False, "Hidden details must not survive a condition change"
+        except HTTPException as exc:
+            assert exc.status_code == 422
+    assert "history.prior_refusal_details" not in validate_answers(SYNTHETIC_ANSWERS)
+
+
+def test_versioned_client_conditional_submission_and_review(api):
+    client, who, factory = api
+    org, case, staff = _open_client(api, "questionnaire-condition")
+    yes = {**SYNTHETIC_ANSWERS, "history.prior_refusal": "yes"}
+    assert _submit(client, case, fields=yes).status_code == 422
+    saved = _submit(client, case, fields={
+        **yes, "history.prior_refusal_details": "Fictional permit refused in 2024"})
+    assert saved.status_code == 201, saved.text
+    who["sub"] = staff
+    staff_url = _staff_url(org, case)
+    result = client.post(
+        staff_url + f"/{saved.json()['id']}/answers/history.prior_refusal_details/decide",
+        json={"decision": "accept"})
+    assert result.status_code == 201, result.text
+    assert result.json()["fact_status"] == "pending"

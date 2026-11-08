@@ -58,7 +58,16 @@ def build_worklist(*, case: Case, form_code: str, profile: ApplicantProfile | No
                                  candidate_facts, docs, scans)
         submitted = submission is not None and bool(submission.answers.get(path))
         profile_claim = bool(profile_identity.get(PROFILE_PATHS.get(path, "")))
-        if evidence["status"] == "verified_source_value":
+        condition_state = ("active" if question.condition_path is None else
+                           "unresolved" if submission is None or
+                           submission.answers.get(question.condition_path) not in ("yes", "no") else
+                           "active" if submission.answers.get(question.condition_path) == question.condition_value
+                           else "inactive")
+        if condition_state == "inactive":
+            state = "not_applicable_to_latest_answer"
+        elif condition_state == "unresolved":
+            state = "conditional_applicability_unresolved"
+        elif evidence["status"] == "verified_source_value":
             state = "evidence_verified"
         elif evidence["status"] not in ("missing_evidence",):
             state = "evidence_review_required"
@@ -77,11 +86,15 @@ def build_worklist(*, case: Case, form_code: str, profile: ApplicantProfile | No
             "path": path, "label": question.label, "group": question.group,
             "required_by_preliminary_questionnaire": question.required,
             "status": state, "evidence_status": evidence["status"],
+            "condition_state": condition_state,
+            "condition_path": question.condition_path,
             "has_profile_claim": profile_claim,
             "has_latest_submitted_answer": submitted,
             "latest_answer_decision": accepted.get(path),
         })
-    outstanding = [x["path"] for x in rows if x["status"] != "evidence_verified"]
+    outstanding = [x["path"] for x in rows if x["status"] not in
+                   ("evidence_verified", "not_applicable_to_latest_answer")]
+    applicable = [x for x in rows if x["condition_state"] != "inactive"]
     manifest = MANIFESTS[form_code]
     return {
         "case_id": str(case.id), "form_code": form_code,
@@ -97,7 +110,11 @@ def build_worklist(*, case: Case, form_code: str, profile: ApplicantProfile | No
         },
         "questions": rows,
         "preliminary_question_count": len(rows),
-        "document_verified_question_count": len(rows) - len(outstanding),
+        "document_verified_question_count": sum(
+            x["status"] == "evidence_verified" for x in rows),
+        "applicable_question_count": len(applicable),
+        "unresolved_conditional_question_count": sum(
+            x["condition_state"] == "unresolved" for x in rows),
         "questions_still_requiring_evidence_or_review": outstanding,
         "official_form_complete": False,
         "official_pdf_autofill_supported": False,
