@@ -74,7 +74,7 @@ async function renderApplicantCase(clientId){
  }
  html+='<h3>Client timeline clarifications</h3>';
  for(const request of clarifications.requests){
-   html+='<div class="item-row"><div style="flex:1;min-width:0"><strong>'+h(request.kind)+
+   html+='<div class="item-row" tabindex="-1" data-pulse-ref="'+h(request.id)+'"><div style="flex:1;min-width:0"><strong>'+h(request.kind)+
      ' · '+h(request.flag_type.replaceAll('_',' '))+'</strong>'+
      '<div class="meta">'+h(request.question)+'</div>'+
      '<div class="meta">Status: '+h(request.status.replaceAll('_',' '))+

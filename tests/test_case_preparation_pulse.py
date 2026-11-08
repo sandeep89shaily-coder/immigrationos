@@ -115,3 +115,40 @@ def test_live_case_scope_without_package_and_after_package(api):
     assert client.get(url).status_code==404
     who["sub"]="unrelated-pulse"
     assert client.get(url).status_code==404
+
+
+def test_pulse_destinations_are_existing_case_tabs_and_scoped_record_refs():
+    proposal = obj(id=uuid4(), kind="travel")
+    request = obj(id=uuid4(), kind="employment", flag_type="overlap_for_review")
+    issue, task = obj(id=uuid4(), status="open"), obj(id=uuid4(), status="open")
+    result = base(
+        repeatables=[proposal], clarifications=[request],
+        issues=[issue], tasks=[task],
+        requirements={"requirements":[{"key":"passport", "status":"missing",
+                                        "title":"Passport"}],
+                      "unresolved_requirements":["passport"],
+                      "source_recheck_required":False},
+        preflight={"blockers":["Missing supporting document"],
+                   "acknowledgement":"stale",
+                   "internal_preflight_status":"blocked",
+                   "source_recheck_required":False})
+    expected = {
+        "package":"package", "intake":"intake", "documents":"planning",
+        "client_records":"intake", "timeline":"applicant",
+        "case_issues":"issues", "case_tasks":"tasks",
+        "form_preflight":"preflight",
+    }
+    assert all(item["target_tab"] == expected[item["area"]]
+               for item in result["worklist_items"])
+    refs = {
+        (item["area"], item["reference_id"], item["target_reference_id"])
+        for item in result["worklist_items"] if item["reference_id"]
+    }
+    assert ("client_records", str(proposal.id), str(proposal.id)) in refs
+    assert ("timeline", str(request.id), str(request.id)) in refs
+    assert ("case_issues", str(issue.id), str(issue.id)) in refs
+    assert ("case_tasks", str(task.id), str(task.id)) in refs
+    assert all(item["target_reference_id"] is None
+               for item in result["worklist_items"] if not item["reference_id"])
+    assert all(not item["target_tab"].startswith(("http:", "https:", "/"))
+               for item in result["worklist_items"])
