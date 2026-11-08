@@ -37,14 +37,15 @@ def test_empty_case_preview_reports_fourteen_gaps_and_never_exports(api):
     assert result.status_code == 200, result.text
     assert result.headers["cache-control"] == "no-store"
     data = result.json()
-    assert data["internal_preview_field_count"] == 14
+    assert data["internal_preview_field_count"] == 24
     assert data["verified_preview_field_count"] == 0
-    assert data["missing_preview_field_count"] == 14
-    assert data["guided_source_field_count"] == 8
+    assert data["missing_preview_field_count"] == 18
+    assert data["guided_source_field_count"] == 18
     assert data["entire_official_form_complete"] is False
     assert data["pdf_export_available"] is False
     assert data["submission_supported"] is False
     assert all(field["value"] is None for field in data["fields"])
+    assert sum(row["status"] == "unresolved_condition" for row in data["fields"]) == 6
 
 
 @pytest.mark.parametrize(("code", "context"), [
