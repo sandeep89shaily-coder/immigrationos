@@ -210,6 +210,27 @@ def staff_repeatables(org_id: UUID, case_id: UUID, response: Response,
             "official_form_complete": False}
 
 
+@staff_router.get("/master-records")
+def staff_supplemental_records(org_id: UUID, case_id: UUID,
+                               response: Response, db: Session = Depends(get_db),
+                               access: OrgAccess = Depends(get_org_access)):
+    allow(access, READ)
+    case = study_case(db, org_id, case_id)
+    rows = db.scalars(select(ApplicantSupplementalHistory).where(
+        ApplicantSupplementalHistory.org_id == org_id,
+        ApplicantSupplementalHistory.client_id == case.client_id
+    ).order_by(ApplicantSupplementalHistory.kind,
+               ApplicantSupplementalHistory.updated_at,
+               ApplicantSupplementalHistory.id).limit(100)).all()
+    response.headers["Cache-Control"] = "no-store"
+    return {
+        "records": [{"id": str(row.id), "kind": row.kind,
+                     "details": row.details, "version": row.version}
+                    for row in rows],
+        "verified_evidence": False, "official_form_complete": False,
+    }
+
+
 @staff_router.post("/{proposal_id}/decide", status_code=201)
 def decide_repeatable(org_id: UUID, case_id: UUID, proposal_id: UUID,
                       payload: DecisionInput, db: Session = Depends(get_db),
@@ -240,6 +261,16 @@ def decide_repeatable(org_id: UUID, case_id: UUID, proposal_id: UUID,
                 raise HTTPException(409, "Identical family record already exists")
             row = FamilyMember(org_id=org_id, client_id=case.client_id,
                                updated_by_sub=access.principal.sub, **p.details)
+        elif p.kind in SUPPLEMENTAL_ADAPTERS:
+            duplicates = db.scalars(select(ApplicantSupplementalHistory).where(
+                ApplicantSupplementalHistory.org_id == org_id,
+                ApplicantSupplementalHistory.client_id == case.client_id,
+                ApplicantSupplementalHistory.kind == p.kind)).all()
+            if any(row.details == p.details for row in duplicates):
+                raise HTTPException(409, "Identical supplemental history record already exists")
+            row = ApplicantSupplementalHistory(
+                org_id=org_id, client_id=case.client_id, kind=p.kind,
+                details=p.details, updated_by_sub=access.principal.sub)
         else:
             duplicates = db.scalars(select(ApplicantHistory).where(
                 ApplicantHistory.org_id == org_id,
