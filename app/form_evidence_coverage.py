@@ -33,6 +33,7 @@ SCHEMA_VERSION = "internal-reviewed-subset-1"
 DATE_PATHS = frozenset({
     "identity.passport_issue_date", "identity.passport_expiry_date",
     "education.program_start_date", "education.program_end_date",
+    "identity.national_id_issue_date", "identity.national_id_expiry_date",
 })
 MONEY_PATHS = frozenset({"finance.tuition_cad", "finance.available_funds_cad"})
 
@@ -46,7 +47,14 @@ def validate_guided_value(path: str, state: dict) -> dict:
         return state
     value = state["value"]
     plausible = True
-    if path in DATE_PATHS:
+    if path in {
+        "identity.has_other_names", "identity.has_national_id",
+        "history.has_previous_relationships", "history.has_foreign_residences",
+    }:
+        # "unsure" is an unresolved instruction-level declaration, never a
+        # verified Boolean condition that can dismiss dependent questions.
+        plausible = value in ("yes", "no")
+    elif path in DATE_PATHS:
         try:
             plausible = date.fromisoformat(value).isoformat() == value
         except (TypeError, ValueError):
