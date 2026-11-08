@@ -173,3 +173,46 @@ def test_occupation_lookback_routes_to_applicant_without_implying_readiness():
     assert result["area_counts"]["timeline"]==1
     assert result["operational_worklist_clear"] is False
     assert result["entire_ircc_form_complete"] is False
+
+
+def test_supplemental_issues_route_to_applicant_without_exposing_source_values():
+    result=base(worklist={
+        "questions": [],
+        "preliminary_question_count": 39,
+        "document_verified_question_count": 0,
+        "supplemental_disclosure_review":[
+            {"controller_path":"history.has_previous_relationships",
+             "kind":"previous_relationship",
+             "status":"disclosure_conflict_review_required"},
+            {"controller_path":"history.has_foreign_residences",
+             "kind":"foreign_residence",
+             "status":"supplemental_evidence_review_required"},
+        ],
+    })
+    related=[item for item in result["worklist_items"]
+             if item["area"]=="supplemental"]
+    assert len(related)==2
+    assert result["area_counts"]["supplemental"]==2
+    assert all(i["target_tab"]=="applicant" for i in related)
+    assert all(i["reference_id"] is None for i in related)
+    assert result["operational_worklist_clear"] is False
+    assert result["official_pdf_generation_supported"] is False
+
+
+def test_pending_supplemental_review_uses_existing_proposal_route_not_duplicate():
+    proposal=obj(id=uuid4(),kind="previous_relationship")
+    result=base(
+        repeatables=[proposal],
+        worklist={
+            "questions":[],"preliminary_question_count":39,
+            "document_verified_question_count":0,
+            "supplemental_disclosure_review":[{
+                "controller_path":"history.has_previous_relationships",
+                "kind":"previous_relationship",
+                "status":"awaiting_staff_record_review"}],
+        })
+    assert result["area_counts"]["client_records"]==1
+    assert result["area_counts"]["supplemental"]==0
+    entry=next(x for x in result["worklist_items"] if x["area"]=="client_records")
+    assert entry["target_tab"]=="intake"
+    assert entry["target_reference_id"]==str(proposal.id)
