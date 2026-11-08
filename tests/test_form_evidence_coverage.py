@@ -37,14 +37,15 @@ def test_empty_case_preview_reports_fourteen_gaps_and_never_exports(api):
     assert result.status_code == 200, result.text
     assert result.headers["cache-control"] == "no-store"
     data = result.json()
-    assert data["internal_preview_field_count"] == 14
+    assert data["internal_preview_field_count"] == 24
     assert data["verified_preview_field_count"] == 0
-    assert data["missing_preview_field_count"] == 14
-    assert data["guided_source_field_count"] == 8
+    assert data["missing_preview_field_count"] == 18
+    assert data["guided_source_field_count"] == 18
     assert data["entire_official_form_complete"] is False
     assert data["pdf_export_available"] is False
     assert data["submission_supported"] is False
     assert all(field["value"] is None for field in data["fields"])
+    assert sum(row["status"] == "unresolved_condition" for row in data["fields"]) == 6
 
 
 @pytest.mark.parametrize(("code", "context"), [
@@ -149,3 +150,70 @@ def test_source_guided_document_requires_scan_clearance(api, monkeypatch):
                if r["canonical_path"] == "finance.tuition_cad")
     assert row["status"] == "verified_source_value"
     assert cleared["snapshot_sha256"] != blocked["snapshot_sha256"]
+
+
+@pytest.mark.parametrize(("controller", "child"), [
+    ("identity.has_other_names", "identity.other_family_name"),
+    ("identity.has_national_id", "identity.national_id_number"),
+])
+def test_guidance_conditions_need_document_verified_parent_and_hide_inactive_evidence(
+        api, monkeypatch, controller, child):
+    client, _, factory = api
+    org, case, _ = make_case(api, "conditional-coverage-" + str(uuid4())[:8])
+    child_doc = add_fact(api, org, case, child, "SYNTHETIC")
+    monkeypatch.setattr(coverage, "scan_status_by_document",
+                        lambda *args: {child_doc: "cleared"})
+    url = endpoint(org, case)
+    unknown = client.get(url).json()
+    row = next(x for x in unknown["fields"] if x["canonical_path"] == child)
+    assert row["condition_state"] == "unresolved"
+    assert row["value"] is None
+    assert row["document_ids"] == []
+    assert "conditional_applicability_unresolved" in unknown["blockers"]
+
+    controller_doc = add_fact(api, org, case, controller, "no")
+    # Even a reviewed but not scan-cleared controller cannot activate or
+    # deactivate a branch. Only its documentary proof may do so.
+    blocked = client.get(url).json()
+    row = next(x for x in blocked["fields"] if x["canonical_path"] == child)
+    assert row["condition_state"] == "unresolved"
+    monkeypatch.setattr(coverage, "scan_status_by_document",
+                        lambda *args: {child_doc: "cleared",
+                                       controller_doc: "cleared"})
+    inactive = client.get(url).json()
+    row = next(x for x in inactive["fields"] if x["canonical_path"] == child)
+    assert row["condition_state"] == "inactive"
+    assert row["status"] == "inactive_condition"
+    assert row["value"] is None
+    assert row["evidence_ids"] == []
+
+    with factory() as db:
+        fact = db.query(CaseFact).filter(
+            CaseFact.case_id == UUID(case),
+            CaseFact.field_path == controller).one()
+        fact.value = "yes"
+        db.commit()
+    active = client.get(url).json()
+    row = next(x for x in active["fields"] if x["canonical_path"] == child)
+    assert row["condition_state"] == "active"
+    assert row["status"] == "verified_source_value"
+    assert row["value"] == "SYNTHETIC"
+    assert active["snapshot_sha256"] != inactive["snapshot_sha256"]
+
+
+def test_unsure_declaration_and_invalid_national_id_date_never_verify(api, monkeypatch):
+    client, _, _ = api
+    org, case, _ = make_case(api, "guidance-uncertain-date")
+    flag_doc = add_fact(api, org, case, "identity.has_national_id", "unsure")
+    date_doc = add_fact(api, org, case, "identity.national_id_issue_date", "2025-02-30")
+    monkeypatch.setattr(coverage, "scan_status_by_document",
+                        lambda *args: {flag_doc: "cleared", date_doc: "cleared"})
+    data = client.get(endpoint(org, case)).json()
+    flag = next(x for x in data["fields"]
+                if x["canonical_path"] == "identity.has_national_id")
+    date_field = next(x for x in data["fields"]
+                      if x["canonical_path"] == "identity.national_id_issue_date")
+    assert flag["status"] == "invalid_evidence_value"
+    assert date_field["status"] == "unresolved_condition"
+    assert date_field["value"] is None
+    assert data["entire_official_form_complete"] is False

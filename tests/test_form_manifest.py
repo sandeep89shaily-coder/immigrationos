@@ -30,14 +30,21 @@ def test_registry_manifests_track_pinned_revision_and_guided_fields():
         assert manifest.code == code
         assert manifest.entire_form_inventoried is False
         expanded = expand_manifest(manifest, {})
-        assert len(expanded) == 2
+        assert len(expanded) == 3
         assert len(expanded[0]["fields"]) == 6
         assert len(expanded[1]["fields"]) == 8
-        assert manifest.manifest_version.endswith("-v2")
+        assert len(expanded[2]["fields"]) == 10
+        assert manifest.manifest_version.endswith("-v3")
         assert all(field["source_url"].startswith("https://www.canada.ca/")
                    and field["source_section"]
                    for field in expanded[1]["fields"])
         assert all(field["required"] is False for field in expanded[1]["fields"])
+        assert all(field["source_url"].startswith("https://www.canada.ca/")
+                   for field in expanded[2]["fields"])
+        assert all(field["condition_state"]=="unresolved" for field in expanded[2]["fields"]
+                   if field["key"] in ("alias_family", "alias_given",
+                                       "national_id_number", "national_id_country",
+                                       "national_id_issued", "national_id_expires"))
         assert manifest.entire_form_inventoried is False
         assert len(manifest.digest) == 64
         assert manifest.digest == manifest.digest
@@ -50,6 +57,7 @@ def test_conditions_are_three_valued_not_silently_false():
     assert evaluate_condition(c, {"identity.has_extra": "no"}) == "inactive"
     assert evaluate_condition(Condition("identity.has_extra", "not_equals", "yes"),
                               {"identity.has_extra": "no"}) == "active"
+    assert evaluate_condition(c, {"identity.has_extra":"unsure"}) == "unresolved"
     result = expand_manifest(sample(), {})
     assert result[0]["fields"][1]["condition_state"] == "unresolved"
     assert result[1]["state"] == "unresolved_repeat_count"
@@ -94,7 +102,7 @@ def test_expanded_guidance_source_is_immutable_manifest_identity():
         assert all(row.source_url == REGISTRY[code].ircc_source_url
                    for row in manifest.sections[1].fields)
         assert len({field.canonical_path for section in manifest.sections
-                    for field in section.fields}) == 14
+                    for field in section.fields}) == 24
         assert len(manifest.digest) == 64
     with pytest.raises(ValueError):
         FieldDefinition("passport", "Passport", "identity.passport_number",
