@@ -93,10 +93,28 @@ async function renderRepeatables(caseId){
   '<h3>Previously sent entries</h3>'+(received||'<p>No entries sent yet.</p>')+'</section>';
 }
 
+async function renderTimelineClarifications(caseId){
+ const data=await api('/api/v1/client/cases/'+encodeURIComponent(caseId)+'/timeline-clarifications');
+ if(!data.requests.length)return '';
+ let html='<section class="card"><h2>Timeline questions from your consultant</h2>'+
+   '<p>These questions concern dates you supplied. Your answer will be reviewed; it will not automatically change your history or any IRCC form.</p>';
+ for(const item of data.requests){
+   html+='<div class="request"><div><strong>'+esc(item.kind)+' · '+
+     esc(item.flag_type.replaceAll('_',' '))+'</strong><p>'+esc(item.question)+'</p>'+
+     '<div class="meta">Status: '+esc(item.status.replaceAll('_',' '))+'</div></div></div>';
+   if(item.status==='awaiting_client'){
+     html+='<form data-timeline-reply="'+esc(caseId)+'" data-request-id="'+esc(item.id)+'">'+
+       '<label>Response to consultant<textarea name="answer" rows="4" minlength="10" maxlength="1600" required></textarea></label>'+
+       '<p><button type="submit" class="primary">Send explanation for review</button></p></form>';
+   }
+ }
+ return html+'</section>';
+}
 async function load(){const cases=await api('/api/v1/client/cases');if(!cases.length){$('cases').innerHTML='<div class="empty">No linked cases yet. Accept an invitation from your consultant to begin.</div>';return}
  const blocks=[];for(const c of cases){const requests=await api(`/api/v1/client/cases/${encodeURIComponent(c.id)}/requests`);
  const intake=c.application_type==='study_permit'?(await renderStudyIntake(c.id))+(await renderRepeatables(c.id)):'';
- blocks.push(`<section class="card"><h2>${esc(c.title)} <span class="status">${esc(c.status)}</span></h2><p>${esc(c.application_type.replaceAll('_',' '))}</p><h3>Requested documents</h3>${requests.length?requests.map(r=>`<div class="request"><div><strong>${esc(r.title)}</strong><div class="meta">${esc(r.instructions)}${r.due_at?' · Due '+esc(new Date(r.due_at).toLocaleDateString()):''}</div></div>${r.status==='open'&&c.status!=='closed'?`<form data-request="${esc(r.id)}" data-case="${esc(c.id)}"><input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.txt" required aria-label="Upload ${esc(r.title)}"><button class="primary" type="submit">Upload</button></form>`:`<span class="status">${esc(r.status)}</span>`}</div>`).join(''):'<p>No outstanding document requests.</p>'}</section>${intake}`)}$('cases').innerHTML=blocks.join('');
+ const clarifications=await renderTimelineClarifications(c.id);
+ blocks.push(`<section class="card"><h2>${esc(c.title)} <span class="status">${esc(c.status)}</span></h2><p>${esc(c.application_type.replaceAll('_',' '))}</p><h3>Requested documents</h3>${requests.length?requests.map(r=>`<div class="request"><div><strong>${esc(r.title)}</strong><div class="meta">${esc(r.instructions)}${r.due_at?' · Due '+esc(new Date(r.due_at).toLocaleDateString()):''}</div></div>${r.status==='open'&&c.status!=='closed'?`<form data-request="${esc(r.id)}" data-case="${esc(c.id)}"><input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.txt" required aria-label="Upload ${esc(r.title)}"><button class="primary" type="submit">Upload</button></form>`:`<span class="status">${esc(r.status)}</span>`}</div>`).join(''):'<p>No outstanding document requests.</p>'}</section>${intake}${clarifications}`)}$('cases').innerHTML=blocks.join('');
  for(const form of $('cases').querySelectorAll('form[data-intake]'))updateIntakeConditions(form);}
 async function init(){try{S.config=await fetch('/app/config',{cache:'no-store'}).then(r=>r.json());$('signin').onclick=login;
  $('signout').onclick=()=>{S.token=null;S.refresh=null;$('portal').classList.add('hidden');$('welcome').classList.remove('hidden');$('signout').classList.add('hidden');notice('Signed out of this browser session.')};
@@ -120,6 +138,19 @@ async function init(){try{S.config=await fetch('/app/config',{cache:'no-store'})
       acknowledged_notice:form.querySelector('[name=acknowledged_notice]').checked}
    });
    notice('Entry sent to your consultant for review. It has not been marked verified.');
+   await load();
+  }catch(error){notice(error.message)}finally{button.disabled=false}
+ });
+ document.addEventListener('submit',async e=>{
+  const form=e.target.closest('form[data-timeline-reply]');
+  if(!form)return;
+  e.preventDefault();
+  const button=form.querySelector('button[type=submit]');button.disabled=true;
+  try{
+   await api('/api/v1/client/cases/'+encodeURIComponent(form.dataset.timelineReply)+
+     '/timeline-clarifications/'+encodeURIComponent(form.dataset.requestId)+'/reply',{
+       method:'POST',body:{answer:form.elements.namedItem('answer').value.trim()}});
+   notice('Explanation received for consultant review. No history record has been changed.');
    await load();
   }catch(error){notice(error.message)}finally{button.disabled=false}
  });
