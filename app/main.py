@@ -191,6 +191,8 @@ app.include_router(ircc_registry_router)
 app.include_router(form_preflight_router)
 from app.form_evidence_coverage import router as form_evidence_coverage_router
 app.include_router(form_evidence_coverage_router)
+from app.internal_form_evidence_trace import router as internal_form_evidence_trace_router
+app.include_router(internal_form_evidence_trace_router)
 from app.study_intake_worklist import router as study_intake_worklist_router
 app.include_router(study_intake_worklist_router)
 from app.form_coverage import router as form_coverage_router
