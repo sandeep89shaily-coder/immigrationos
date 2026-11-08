@@ -268,7 +268,7 @@ def test_source_anchored_alias_and_national_id_branch_validation(api):
     org, case, staff = _open_client(api, "expanded-questionnaire-validation")
     schema = client.get(_client_url(case)).json()
     assert schema["template_version"] == TEMPLATE_VERSION
-    assert len(schema["fields"]) == 27
+    assert len(schema["fields"]) == 37
     for path in ("identity.other_family_name", "identity.national_id_number",
                  "identity.national_id_country", "finance.expenses_payer_details"):
         q=next(f for f in schema["fields"] if f["path"]==path)
@@ -330,3 +330,62 @@ def test_unsure_parent_does_not_activate_or_clear_subquestions():
     assert answer["identity.has_other_names"]=="unsure"
     assert "identity.other_family_name" not in answer
     assert "identity.national_id_number" not in answer
+
+
+def test_official_background_declarations_and_inactive_details(api):
+    from app.study_intake import validate_answers, questionnaire, TEMPLATE_VERSION
+    from fastapi import HTTPException
+    client, who, factory = api
+    org, case, staff = _open_client(api, "background-declaration-case")
+    schema=client.get(_client_url(case)).json()
+    assert schema["template_version"] == TEMPLATE_VERSION
+    assert len(schema["fields"]) == 37
+    controls = [
+        "background.unauthorized_stay_study_work",
+        "background.previous_canadian_application",
+        "background.criminal_offence",
+        "background.military_security_service",
+        "background.violent_organization_association",
+        "background.ill_treatment_or_desecration",
+    ]
+    for key in controls:
+        field=next(q for q in schema["fields"] if q["path"]==key)
+        assert field["kind"]=="choice"
+        assert field["source_section"].startswith("Background information")
+        assert field["choices"]==["yes","no","unsure"]
+    base={**SYNTHETIC_ANSWERS, **{key:"no" for key in controls}}
+    assert validate_answers(base)==base
+    assert _submit(client,case,fields=base).status_code == 201
+    for key in controls[:4]:
+        detail=key+"_details"
+        if key=="background.unauthorized_stay_study_work":
+            detail="background.unauthorized_stay_study_work_details"
+        q=next(row for row in schema["fields"] if row["path"]==detail)
+        assert q["required"] is True and q["condition_value"]=="yes"
+        try:
+            validate_answers({**base,key:"yes"})
+        except HTTPException as exc:
+            assert exc.status_code == 422
+        else:
+            assert False, "Missing mandatory detail accepted"
+        try:
+            validate_answers({**base,detail:"Should be hidden"})
+        except HTTPException as exc:
+            assert exc.status_code == 422
+        else:
+            assert False, "Stale hidden answer accepted"
+        assert validate_answers({**base,key:"yes",
+                                 detail:"Fictional context supplied for professional review"})[detail]
+    positive={**base,
+        "background.previous_canadian_application":"yes",
+        "background.previous_canadian_application_details":"Test study permit in 2020",
+        "background.military_security_service":"yes",
+        "background.military_security_service_details":"Fictional voluntary unit 2018-2019"}
+    submitted=_submit(client,case,fields=positive)
+    assert submitted.status_code==201,submitted.text
+    who.update(sub=staff,email=None,email_verified=False)
+    result=client.post(_staff_url(org,case)+f"/{submitted.json()['id']}/answers/background.military_security_service_details/decide",
+        json={"decision":"accept"})
+    assert result.status_code==201,result.text
+    assert result.json()["fact_status"]=="pending"
+    assert result.json()["created_fact_id"]

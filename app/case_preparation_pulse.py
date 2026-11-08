@@ -59,6 +59,12 @@ def compose_pulse(*, case, package, worklist, requirements, preflight,
             if question["status"] not in ("evidence_verified", "not_applicable_to_latest_answer"):
                 add("intake", question["path"], question["status"],
                     question["label"])
+        employment = worklist.get("employment_history_review")
+        if employment is not None:
+            add("timeline", "occupation_history_10_year_review",
+                employment["status"],
+                ("Review ten-year employment chronology and clarify missing "
+                 "periods; retired applicants may need a different window"))
     else:
         add("intake","intake_unavailable","unsupported",
             "No supported study-permit questionnaire worklist")

@@ -5,6 +5,8 @@ This is a read-only view; questionnaire submissions remain append-only and
 staff accept decisions create *pending*, not verified, CaseFacts.
 """
 from uuid import UUID
+from datetime import date
+from calendar import monthrange
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,6 +16,7 @@ from app.applicant_models import ApplicantProfile, FamilyMember
 from app.applicant_history_models import ApplicantHistory
 from app.db import get_db
 from app.form_manifest import MANIFESTS
+from app.history_timeline_audit import audit_history_timeline
 from app.imm5476_case_preview import _field_status, scan_status_by_document
 from app.intake_models import StudyIntakeDecision, StudyIntakeSubmission
 from app.models import Case, CaseDocument, CaseFact
@@ -96,6 +99,32 @@ def build_worklist(*, case: Case, form_code: str, profile: ApplicantProfile | No
     outstanding = [x["path"] for x in rows if x["status"] not in
                    ("evidence_verified", "not_applicable_to_latest_answer")]
     applicable = [x for x in rows if x["condition_state"] != "inactive"]
+    # Official instructions ask for ten years of occupation history or the
+    # ten years preceding retirement. This preview cannot infer retirement.
+    today = date.today()
+    lookback_start = date(today.year - 10, today.month,
+                          min(today.day, monthrange(today.year - 10, today.month)[1]))
+    employment_audit = audit_history_timeline(
+        records=histories, client_id=case.client_id, org_id=case.org_id,
+        start=lookback_start, end=today)["categories"]["employment"]
+    occupation_review = {
+        "window_start": lookback_start.isoformat(),
+        "window_end": today.isoformat(),
+        "instruction_window": "last_10_years_or_pre_retirement_10_years",
+        "record_count": employment_audit["record_count"],
+        "coverage_evaluable": employment_audit["coverage_evaluable"],
+        "flag_types": sorted({flag["type"] for flag in employment_audit["flags"]}),
+        "flag_count": len(employment_audit["flags"]),
+        "status": ("timeline_clarifications_needed"
+                   if employment_audit["flags"] else
+                   "chronology_needs_documentary_review"),
+        "verified_complete": False,
+        "retirement_exception_assessed": False,
+        "source_url": ("https://www.canada.ca/en/immigration-refugees-citizenship/"
+                       "services/application/application-forms-guides/" +
+                       form_code.lower() + ".html"),
+        "source_section": "Employment (work or occupation)",
+    }
     manifest = MANIFESTS[form_code]
     return {
         "case_id": str(case.id), "form_code": form_code,
@@ -110,6 +139,7 @@ def build_worklist(*, case: Case, form_code: str, profile: ApplicantProfile | No
             for kind in ("address", "education", "employment", "travel")
         },
         "questions": rows,
+        "employment_history_review": occupation_review,
         "preliminary_question_count": len(rows),
         "document_verified_question_count": sum(
             x["status"] == "evidence_verified" for x in rows),

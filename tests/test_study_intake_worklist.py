@@ -25,9 +25,9 @@ def test_worklist_exposes_missing_questions_without_values(api):
     assert result.headers["cache-control"] == "no-store"
     body = result.json()
     assert body["form_code"] == "IMM1294"
-    assert body["preliminary_question_count"] == 27
+    assert body["preliminary_question_count"] == 37
     assert body["document_verified_question_count"] == 0
-    assert len(body["questions_still_requiring_evidence_or_review"]) == 27
+    assert len(body["questions_still_requiring_evidence_or_review"]) == 37
     assert {q["status"] for q in body["questions"]} == {"missing_answer", "conditional_applicability_unresolved"}
     assert body["official_pdf_autofill_supported"] is False
     assert all("value" not in row for row in body["questions"])
@@ -123,5 +123,36 @@ def test_alias_national_id_and_expense_payer_conditions_reach_worklist(api):
     assert states["identity.other_family_name"]["status"] == "not_applicable_to_latest_answer"
     assert states["identity.national_id_number"]["condition_state"] == "active"
     assert states["finance.expenses_payer_details"]["status"] == "missing_answer"
-    assert data["preliminary_question_count"] == 27
+    assert data["preliminary_question_count"] == 37
     assert data["official_form_complete"] is False
+
+
+def test_employment_lookback_is_explicit_and_never_certifies_completeness(api):
+    from datetime import date
+    client, _, _ = api
+    org, case, cid, url = setup(api, "occupation-history-ten-year-gap")
+    result = client.get(url)
+    assert result.status_code == 200, result.text
+    review = result.json()["employment_history_review"]
+    assert review["record_count"] == 0
+    assert review["flag_types"] == ["uncovered_period_for_review"]
+    assert review["window_end"] == date.today().isoformat()
+    assert review["verified_complete"] is False
+    assert review["retirement_exception_assessed"] is False
+    assert "canada.ca" in review["source_url"]
+    assert result.json()["official_form_complete"] is False
+
+
+def test_unknown_employment_end_is_not_treated_as_current(api):
+    client, _, _ = api
+    org, case, cid, url = setup(api, "occupation-history-unknown-end")
+    created=client.post(f"/api/v1/orgs/{org}/clients/{cid}/histories/employment",
+        json={"details":{"start_date":"2020-01-01","employer":"Imaginary Company",
+                         "position":"Tester","country":"Fictionland",
+                         "employment_status":"employed"}})
+    assert created.status_code == 201, created.text
+    review=client.get(url).json()["employment_history_review"]
+    assert "end_date_not_supplied" in review["flag_types"]
+    assert "uncovered_period_for_review" not in review["flag_types"]
+    assert review["coverage_evaluable"] is False
+    assert review["verified_complete"] is False
