@@ -4,11 +4,13 @@ Client claims are never independent evidence. Staff acceptance creates an
 unverified master family/history record, never a verified CaseFact.
 """
 from hashlib import sha256
+from datetime import date
+from typing import Literal
 import json
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -16,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.access import OrgAccess, allow, get_org_access
 from app.applicant_history import ADAPTERS, _validated_details
 from app.applicant_history_models import ApplicantHistory
+from app.applicant_supplemental_history_models import ApplicantSupplementalHistory
 from app.applicant_models import FamilyMember
 from app.applicant_profiles import RelativeInput
 from app.auth import Principal, get_principal
@@ -26,14 +29,58 @@ from app.repeatable_intake_models import ClientRepeatableProposal, ClientRepeata
 from app.schemas import Role
 from app.study_intake import NOTICE_VERSION, study_case
 
-VERSION = "repeatable-preliminary-2026-11-08-v1"
-KINDS = ("family", "address", "education", "employment", "travel")
+VERSION = "repeatable-preliminary-2026-11-08-v2"
+KINDS = ("family", "address", "education", "employment", "travel",
+         "previous_relationship", "foreign_residence")
 client_router = APIRouter(prefix="/api/v1/client/cases/{case_id}/repeatables",
                           tags=["client-repeatable-intake"])
 staff_router = APIRouter(prefix="/api/v1/orgs/{org_id}/cases/{case_id}/repeatables",
                          tags=["staff-repeatable-intake"])
 READ = {Role.owner, Role.admin, Role.consultant, Role.assistant}
 REVIEW = {Role.owner, Role.admin, Role.consultant}
+
+
+class PreviousRelationship(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    relationship_type: Literal["married", "common_law"]
+    family_name: str = Field(min_length=1, max_length=100)
+    given_name: str = Field(min_length=1, max_length=100)
+    date_of_birth: date | None = None
+    start_date: date
+    end_date: date
+
+    @model_validator(mode="after")
+    def valid_period(self):
+        if self.end_date < self.start_date:
+            raise ValueError("Relationship end precedes start")
+        return self
+
+
+class ForeignResidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    country: str = Field(min_length=1, max_length=100)
+    status: Literal["citizen", "permanent_resident", "visitor", "worker",
+                    "student", "other", "protected_person", "refugee_claimant",
+                    "foreign_national"]
+    status_other: str | None = Field(default=None, min_length=1, max_length=160)
+    start_date: date
+    end_date: date
+
+    @model_validator(mode="after")
+    def valid_residence(self):
+        if self.end_date < self.start_date:
+            raise ValueError("Residence end precedes start")
+        if self.status == "other" and not self.status_other:
+            raise ValueError("Other immigration status needs explanation")
+        if self.status != "other" and self.status_other is not None:
+            raise ValueError("Other-status explanation is not active")
+        return self
+
+
+SUPPLEMENTAL_ADAPTERS = {
+    "previous_relationship": PreviousRelationship,
+    "foreign_residence": ForeignResidence,
+}
 
 
 class ProposalInput(BaseModel):
@@ -55,6 +102,12 @@ def normalized(kind: str, details: dict) -> dict:
                 mode="json", exclude_none=True)
         except ValidationError:
             raise HTTPException(422, "Invalid family member details") from None
+    if kind in SUPPLEMENTAL_ADAPTERS:
+        try:
+            return SUPPLEMENTAL_ADAPTERS[kind].model_validate(details).model_dump(
+                mode="json", exclude_none=True)
+        except ValidationError:
+            raise HTTPException(422, "Invalid supplemental history details or dates") from None
     if kind not in ADAPTERS:
         raise HTTPException(422, "Unsupported repeatable record category")
     return _validated_details(ADAPTERS[kind], details)
