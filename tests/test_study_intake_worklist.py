@@ -183,6 +183,7 @@ def test_supplemental_crosscheck_disclosure_and_accepted_history_lacks_evidence(
                      "end_date":"2015-01-01"},
             content_sha256="b"*64, template_version="repeatable-test",
             notice_version="test", created_by_sub="fictional-portal"))
+        db.flush()  # Decision composite FK requires the proposal to exist first.
         db.add(ClientRepeatableDecision(
             org_id=oid, case_id=caseid, proposal_id=proposal_id,
             decision="accept", created_record_id=supplemental_id,
