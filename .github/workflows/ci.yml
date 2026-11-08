@@ -22,6 +22,7 @@ jobs:
       - name: Validate consultant and client JavaScript syntax
         run: |
           node --check app/static/workspace.js
+          node --check app/static/applicant.js
           node --check app/static/crm.js
           node --check app/static/engagement.js
           node --check app/static/staff.js
