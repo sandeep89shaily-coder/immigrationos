@@ -31,6 +31,9 @@ def upgrade():
     op.create_index("ix_supplemental_history_client", "applicant_supplemental_histories",
                     ["org_id","client_id","kind"])
     # PostgreSQL cannot add new values to an existing CHECK implicitly.
+    op.alter_column("client_repeatable_proposals", "kind",
+                    existing_type=sa.String(20), type_=sa.String(30),
+                    existing_nullable=False)
     op.drop_constraint("ck_repeatable_proposal_kind", "client_repeatable_proposals", type_="check")
     op.create_check_constraint("ck_repeatable_proposal_kind", "client_repeatable_proposals",
         "kind IN ('family','address','education','employment','travel',"
