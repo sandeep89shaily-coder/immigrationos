@@ -223,6 +223,8 @@ app.include_router(history_timeline_audit_router)
 from app.timeline_clarifications import staff as timeline_clarification_staff_router, client as timeline_clarification_client_router
 app.include_router(timeline_clarification_staff_router)
 app.include_router(timeline_clarification_client_router)
+from app.timeline_history_corrections import router as timeline_history_correction_router
+app.include_router(timeline_history_correction_router)
 app.include_router(evidence_router)
 app.include_router(study_intake_client_router)
 app.include_router(study_intake_staff_router)

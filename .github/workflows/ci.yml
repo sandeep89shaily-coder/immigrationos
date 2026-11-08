@@ -78,6 +78,8 @@ jobs:
         run: DATABASE_URL="$RLS_APP_DATABASE_URL" python scripts/postgres_repeatable_intake_smoke.py
       - name: Exercise history timeline clarification workflow under restricted PostgreSQL RLS
         run: DATABASE_URL="$RLS_APP_DATABASE_URL" python scripts/postgres_timeline_clarification_smoke.py
+      - name: Exercise reviewed timeline history correction under PostgreSQL RLS
+        run: DATABASE_URL="$RLS_APP_DATABASE_URL" python scripts/postgres_timeline_history_correction_smoke.py
       - name: Exercise prospect consultation CRM and unsigned-agreement gating under PostgreSQL RLS
         run: DATABASE_URL="$RLS_APP_DATABASE_URL" python scripts/postgres_crm_smoke.py
       - name: Exercise signed RCIC service engagement and matter assignment under PostgreSQL RLS

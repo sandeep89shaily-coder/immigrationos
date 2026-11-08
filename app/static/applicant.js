@@ -4,6 +4,8 @@ const applicantRoot=id=>q()+'/clients/'+encodeURIComponent(id)+'/applicant';
 
 async function renderApplicantCase(clientId){
  const clarifications=await api(q()+'/cases/'+encodeURIComponent(S.caseId)+'/timeline-clarifications');
+ const historyCorrections=await api(q()+'/cases/'+encodeURIComponent(S.caseId)+'/timeline-clarifications/history-corrections');
+ S.historyCorrections=historyCorrections.corrections;
  S.timelineClarifications=clarifications.requests;
  const [master,drafts,histories,evidence]=await Promise.all([
    api(applicantRoot(clientId)),api(q()+'/cases/'+encodeURIComponent(S.caseId)+'/answer-drafts'),
@@ -77,10 +79,19 @@ async function renderApplicantCase(clientId){
      '<div class="meta">'+h(request.question)+'</div>'+
      '<div class="meta">Status: '+h(request.status.replaceAll('_',' '))+
      (request.reply?' · Client response: '+h(request.reply):'')+'</div></div>'+
+     (request.decision==='reviewed'&&!historyCorrections.corrections.some(c=>c.request_id===request.id)
+       ?'<div class="push">'+btn('Correct history','applicant:clarify-correct:'+request.id,'smallbtn')+'</div>':'')+
      (request.status==='awaiting_staff'?'<div class="push">'+
        btn('Reviewed','applicant:clarify-decision:'+request.id+':reviewed','smallbtn')+' '+
        btn('More information needed','applicant:clarify-decision:'+request.id+':needs_more_information','smallbtn')+
        '</div>':'')+'</div>';
+ }
+ html+='<h3>Linked history corrections</h3>';
+ for(const item of historyCorrections.corrections){
+   html+='<div class="item-row"><div style="flex:1"><strong>'+h(item.kind)+
+     ' · '+h(item.operation)+'</strong><div class="meta">History record '+h(item.record_id)+
+     ' · Version '+h(item.prior_version??'new')+' → '+h(item.new_version)+
+     ' · '+h(item.correction_reason)+'</div></div></div>';
  }
  html+='<h3>Case-specific answer snapshots</h3><p class="meta">These snapshots preserve the source profile version. Every answer remains unverified until separately supported by source evidence and checked by staff.</p>';
  html+=btn('Create internal form-answer draft','applicant:draft','smallbtn');
@@ -178,6 +189,52 @@ async function applicantAction(action){
      '/timeline-clarifications/'+encodeURIComponent(id)+'/decide',{
        method:'POST',body:{decision}});
    await render();return toast('Review recorded; original history unchanged');
+ }
+ if(action.startsWith('applicant:clarify-correct:')){
+   const requestId=action.split(':')[2];
+   const request=S.timelineClarifications?.find(r=>r.id===requestId);
+   if(!request||request.decision!=='reviewed')return toast('A reviewed client clarification is required');
+   const kind=request.kind;
+   const fields=applicantHistoryFields[kind];
+   if(!fields)return toast('Unsupported correction type');
+   const currentRecords=(S.applicantHistories||[]).filter(x=>x.kind===kind);
+   let html='<h2>Link history correction to reviewed clarification</h2>'+
+     '<p>This applies a new unverified history version. The original client explanation and prior record are retained.</p><form>'+
+     '<div class="form-field"><label>Operation</label><select name="operation"><option value="create">Add missing period</option><option value="update">Correct flagged existing period</option></select></div>'+
+     '<div class="form-field"><label>Existing record (for update)</label><select name="record_id"><option value="">New record</option>'+
+     currentRecords.map(r=>'<option value="'+h(r.id)+'">'+h(r.details.start_date)+' / '+h(r.details.end_date||'unknown')+' · '+h(r.id)+'</option>').join('')+'</select></div>'+
+     fld('start_date','Start date','date','required')+
+     fld('end_date','End date','date','');
+   for(const [name,label] of fields){
+      if(name==='employment_status'){
+       html+=selectField(name,label,['employed','self_employed','unemployed','student','other'].map(x=>[x,x.replaceAll('_',' ')]));
+      }else{
+       html+=fld(name,label,'text',(applicantHistoryRequired[kind].includes(name)?'required ':'')+'maxlength="160"');
+      }
+   }
+   html+='<div class="form-field"><label>Reason for correction</label><textarea name="correction_reason" minlength="12" maxlength="600" required></textarea></div>'+
+     actions('Apply versioned correction')+'</form>';
+   modal(html,async form=>{
+      const entries=values(form);
+      const operation=entries.operation;
+      const recordId=entries.record_id;
+      const details={};
+      for(const [name] of [['start_date'],['end_date'],...fields]){
+        if(entries[name]?.trim())details[name]=entries[name].trim();
+      }
+      const payload={operation,details,correction_reason:entries.correction_reason.trim()};
+      if(operation==='update'){
+        const record=currentRecords.find(r=>r.id===recordId);
+        if(!record)throw Error('Choose a current flagged history record for update');
+        payload.record_id=record.id;
+        payload.expected_version=record.version;
+      }
+      await api(q()+'/cases/'+encodeURIComponent(S.caseId)+'/timeline-clarifications/'+
+        encodeURIComponent(requestId)+'/history-correction',{method:'POST',body:payload});
+      S.timelineAudit=null;
+      await render();
+      return toast('Linked history correction recorded; independent evidence review remains required');
+   });return;
  }
  if(action==='applicant:timeline'){
    modal('<h2>Check history dates</h2>'+
