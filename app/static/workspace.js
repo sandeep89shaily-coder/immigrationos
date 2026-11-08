@@ -138,7 +138,33 @@ async function renderCase(){const [cases,clients,tasks,issues,facts,docs,readine
   }else{
    const result=await api(q()+'/cases/'+S.caseId+'/study-intake');
    const versions=result.submissions;
+   let worklist=null;
+   try{worklist=await api(q()+'/cases/'+S.caseId+'/study-intake/worklist')}
+   catch(e){if(!String(e.message).includes('409'))throw e}
    let body='<div class="callout">Client questionnaire answers are self-reported. Accepting an answer adds a PENDING fact. Review against the original document before professional verification. This is not an official IRCC form.</div>';
+   if(worklist){
+    body+='<h3>Questionnaire and verified-evidence gaps</h3>'+
+      '<div class="callout"><strong>'+worklist.document_verified_question_count+
+      ' / '+worklist.applicable_question_count+
+      ' applicable preliminary questions backed by cleared, reviewed documents</strong> · '+
+      worklist.questions_still_requiring_evidence_or_review.length+
+      ' require collection, consultant review or evidence checks. This is not official form completeness.</div>';
+    body+='<details><summary>Inspect questionnaire evidence statuses</summary>';
+    for(const item of worklist.questions){
+      body+='<div class="item-row"><div style="flex:1;min-width:0"><strong>'+h(item.label)+
+        '</strong><div class="meta">'+h(item.path)+' · '+h(item.status.replaceAll('_',' '))+
+        '</div></div>'+chip(item.status)+'</div>';
+    }
+    body+='</details>';
+    body+='<h3>Reusable family and history records</h3>'+
+      '<p class="meta">Family members: '+worklist.family_member_count+
+      ' · Address periods: '+worklist.history_record_counts.address+
+      ' · Education periods: '+worklist.history_record_counts.education+
+      ' · Employment periods: '+worklist.history_record_counts.employment+
+      ' · Travel records: '+worklist.history_record_counts.travel+
+      '. These are client/staff claims until independently reviewed.</p>'+
+      '<p>'+btn('Review applicant and family information','intake:open-applicant','smallbtn')+'</p>';
+   }
    if(!versions.length)body+=empty('No questionnaires received','Invite the fictional client through the Portal tab. The questionnaire appears automatically on their study-permit case.');
    else{
     const current=versions[0];
@@ -249,6 +275,7 @@ function changeStatus(){const caseObj=S.data.cases.find(x=>x.id===S.caseId);cons
  modal(`<h2>Update case status</h2><p>Status changes are recorded in the audit trail. This does not submit anything to IRCC.</p><form>${selectField('status','Next status',options.map(v=>[v,v.replaceAll('_',' ')]))}${fld('reason','Reason (required)','text','required minlength="10" maxlength="250"')}${actions('Update status')}</form>`,async f=>{await api(q()+`/cases/${S.caseId}/status`,{method:'PATCH',body:values(f)})})}
 async function downloadDoc(id){const doc=S.data.docs.find(x=>x.id===id);const res=await api(q()+`/cases/${S.caseId}/documents/${id}/download`,{raw:true});const blob=await res.blob();const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=doc?.filename||'document';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000)}
 async function eventHandler(e){const tab=e.target.closest('[data-tab]');if(tab){S.tab=tab.dataset.tab;return render().catch(fail)}const cRow=e.target.closest('[data-engagement-client]');if(cRow){S.engagementClientId=cRow.dataset.engagementClient;S.caseId=null;S.prospectId=null;S.view='clients';return render().catch(fail)}const prow=e.target.closest('[data-prospect]');if(prow){S.prospectId=prow.dataset.prospect;S.caseId=null;S.view='crm';return render().catch(fail)}const row=e.target.closest('[data-case]');if(row){S.caseId=row.dataset.case;S.view='cases';S.tab='overview';S.filingContext=null;S.prospectId=null;return render().catch(fail)}const act=e.target.closest('[data-action]');if(!act)return;const action=act.dataset.action;
+ if(action==='intake:open-applicant'){S.tab='applicant';return render().catch(fail)}
  try{
  if(action.startsWith('staff:'))return await staffAction(action);
  if(action.startsWith('eg:'))return await egAction(action);
