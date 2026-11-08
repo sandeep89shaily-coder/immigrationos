@@ -68,14 +68,16 @@ const repeatableFields={
  address:[['start_date','From','date'],['end_date','To (leave blank if current)','date'],['line1','Address line'],['city','City'],['region','Province / region'],['country','Country']],
  education:[['start_date','From','date'],['end_date','To','date'],['institution','Institution'],['program','Program'],['country','Country']],
  employment:[['start_date','From','date'],['end_date','To','date'],['employer','Employer'],['position','Position'],['country','Country'],['employment_status','Status','select','employed,self_employed,unemployed,student,other']],
- travel:[['start_date','Departure','date'],['end_date','Return','date'],['destination_country','Country visited'],['purpose','Purpose']]
+ travel:[['start_date','Departure','date'],['end_date','Return','date'],['destination_country','Country visited'],['purpose','Purpose']],
+ previous_relationship:[['relationship_type','Former relationship type','select','married,common_law'],['family_name','Former partner family name'],['given_name','Former partner given names'],['date_of_birth','Former partner date of birth','date'],['start_date','Relationship from','date'],['end_date','Relationship to','date']],
+ foreign_residence:[['country','Country or territory of prior residence'],['status','Immigration status at that time','select','citizen,permanent_resident,visitor,worker,student,other,protected_person,refugee_claimant,foreign_national'],['status_other','Explain Other immigration status'],['start_date','Residence from','date'],['end_date','Residence to','date']]
 };
 async function renderRepeatables(caseId){
  const url='/api/v1/client/cases/'+encodeURIComponent(caseId)+'/repeatables';
  const data=await api(url);
  const formBlocks=Object.entries(repeatableFields).map(([kind,fields])=>{
   const controls=fields.map(([key,label,type,values])=>{
-   const required=['given_name','family_name','relationship','start_date','line1','city','country','institution','program','employer','position','employment_status','destination_country','purpose'].includes(key);
+   const required=['given_name','family_name','relationship','start_date','line1','city','country','institution','program','employer','position','employment_status','destination_country','purpose','relationship_type','status','family_name','given_name'].includes(key);
    const input=type==='select'
     ?'<select name="'+esc(key)+'"'+(required?' required':'')+'><option value="">Select…</option>'+values.split(',').map(v=>'<option value="'+esc(v)+'">'+esc(v.replaceAll('_',' '))+'</option>').join('')+'</select>'
     :'<input type="'+(type==='date'?'date':'text')+'" name="'+esc(key)+'" maxlength="160"'+(required?' required':'')+'>';
@@ -88,7 +90,7 @@ async function renderRepeatables(caseId){
  }).join('');
  const received=data.proposals.map(p=>'<div class="meta">'+esc(p.kind)+' · '+esc(p.review_status)+' · '+esc(new Date(p.created_at).toLocaleString())+'</div>').join('');
  return '<section class="card"><h2>Family and personal history</h2>'+
-  '<p>Add each family member, address period, educational record, job or trip separately. Entries remain unverified until consultant review and supporting evidence checks.</p>'+
+  '<p>Add each family member, address period, educational record, job, trip, former spouse/common-law partner or previous foreign-country stay separately. Earlier submissions remain preserved and await consultant review.</p>'+
   '<p class="meta">'+esc(data.notice)+'</p>'+formBlocks+
   '<h3>Previously sent entries</h3>'+(received||'<p>No entries sent yet.</p>')+'</section>';
 }
@@ -128,6 +130,12 @@ async function init(){try{S.config=await fetch('/app/config',{cache:'no-store'})
   const button=form.querySelector('button[type=submit]');button.disabled=true;
   try{
    const details={};
+   if(form.dataset.kind==='foreign_residence'){
+    const status=form.elements.namedItem('status').value;
+    const other=form.elements.namedItem('status_other').value.trim();
+    if(status==='other'&&!other)throw Error('Explain the Other immigration status before submitting');
+    if(status!=='other'&&other)throw Error('Other status explanation is only used when Other is selected');
+   }
    for(const input of form.querySelectorAll('input[name],select[name]')){
     if(input.name==='acknowledged_notice')continue;
     if(input.value.trim())details[input.name]=input.value.trim();
