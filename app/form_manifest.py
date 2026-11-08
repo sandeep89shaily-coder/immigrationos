@@ -125,7 +125,7 @@ def evaluate_condition(condition: Condition | None, verified_values: Mapping[str
     if condition is None:
         return "active"
     value = verified_values.get(condition.field_path)
-    if value is None:
+    if value is None or value.strip().lower() == "unsure":
         return "unresolved"
     matched = value == condition.expected
     if condition.operator == "not_equals":
@@ -212,6 +212,34 @@ GUIDED_FIELDS: tuple[tuple[str, str, str, str], ...] = (
 )
 
 
+# Cross-checked against Personal details and National identity document
+# instructions on BOTH IMM1294 and IMM5709. Source labels are per-form because
+# the former relationship question number differs (1294 Q11, 5709 Q10).
+# These are questionnaire-level canonical paths, NOT official XFA control IDs.
+CONDITIONAL_GUIDED_FIELDS: tuple[tuple[str, str, str, str, str | None], ...] = (
+    ("alias_flag", "Other name/alias ever used", "identity.has_other_names",
+     "Personal details / Question 2", None),
+    ("alias_family", "Other family name(s)", "identity.other_family_name",
+     "Personal details / Question 2", "identity.has_other_names"),
+    ("alias_given", "Other given name(s)", "identity.other_given_name",
+     "Personal details / Question 2", "identity.has_other_names"),
+    ("national_id_flag", "Has national identity document", "identity.has_national_id",
+     "National identity document / Question 1", None),
+    ("national_id_number", "National ID document number", "identity.national_id_number",
+     "National identity document / Question 2", "identity.has_national_id"),
+    ("national_id_country", "National ID issuing country", "identity.national_id_country",
+     "National identity document / Question 3", "identity.has_national_id"),
+    ("national_id_issued", "National ID issue date", "identity.national_id_issue_date",
+     "National identity document / Question 4", "identity.has_national_id"),
+    ("national_id_expires", "National ID expiry date", "identity.national_id_expiry_date",
+     "National identity document / Question 5", "identity.has_national_id"),
+    ("prior_relationship_flag", "Previous marriage/common-law relationship",
+     "history.has_previous_relationships", "Personal details / Previous relationships", None),
+    ("prior_residence_flag", "Other countries of residence, prior five years",
+     "history.has_foreign_residences", "Personal details / Question 8", None),
+)
+
+
 def guided_subset_manifest(source: ObservedForm) -> FormManifest:
     observed = observed_subset_manifest(source)
     guided = SectionDefinition(
@@ -222,11 +250,22 @@ def guided_subset_manifest(source: ObservedForm) -> FormManifest:
             required=False, source_url=source.ircc_source_url,
             source_section=section
         ) for key, label, path, section in GUIDED_FIELDS))
+    extra = SectionDefinition(
+        key="ircc_guided_conditional",
+        title="Official guidance questions with explicit applicability checks",
+        fields=tuple(FieldDefinition(
+            key=key, label=label, canonical_path=path, required=False,
+            condition=(Condition(parent, "equals", "yes") if parent else None),
+            source_url=source.ircc_source_url,
+            source_section=(("Personal details / Question 11" if source.code == "IMM1294"
+                             else "Personal details / Question 10")
+                            if key == "prior_relationship_flag" else section),
+        ) for key, label, path, section, parent in CONDITIONAL_GUIDED_FIELDS))
     return FormManifest(
         code=source.code, form_revision=source.revision_label,
-        manifest_version="ircc-guidance-observed-subset-2026-11-08-v2",
+        manifest_version="ircc-guidance-conditional-subset-2026-11-08-v3",
         filing_context=source.filing_context,
-        sections=(*observed.sections, guided))
+        sections=(*observed.sections, guided, extra))
 
 
 MANIFESTS: dict[str, FormManifest] = {
