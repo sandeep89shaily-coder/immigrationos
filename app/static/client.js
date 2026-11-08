@@ -36,7 +36,8 @@ async function renderStudyIntake(caseId){
      q.choices.map(o=>'<option value="'+esc(o)+'">'+esc(o.replaceAll('_',' '))+'</option>').join('')+'</select>'
    : '<input data-question-path name="'+esc(q.path)+'" type="'+(q.kind==='date'?'date':q.kind==='money'?'number':'text')+'"'+
      (q.kind==='money'?' min="0" step="0.01"':'')+' maxlength="300"'+required+'>';
-  return '<div class="intake-field"><label>'+esc(q.label)+(q.required?' *':'')+'</label>'+field+'</div>';
+  const conditional=q.condition_path?' data-condition-path="'+esc(q.condition_path)+'" data-condition-value="'+esc(q.condition_value)+'" hidden':'';
+  return '<div class="intake-field"'+conditional+'><label>'+esc(q.label)+(q.required?' *':'')+'</label>'+field+'</div>';
  }).join('');
  return '<section class="card"><h2>Study-permit preliminary intake</h2>'+
    '<p>Answer from your original documents. Your consultant must independently review each answer; this is not an official IRCC form.</p>'+
@@ -49,14 +50,29 @@ async function renderStudyIntake(caseId){
    '</form></section>';
 }
 
+function updateIntakeConditions(form){
+ for(const row of form.querySelectorAll('[data-condition-path]')){
+  const controller=Array.from(form.querySelectorAll('[data-question-path]'))
+   .find(node=>node.name===row.dataset.conditionPath);
+  const visible=!!controller&&controller.value===row.dataset.conditionValue;
+  row.hidden=!visible;
+  for(const input of row.querySelectorAll('[data-question-path]')){
+   input.disabled=!visible;
+   input.required=visible;
+   if(!visible)input.value='';
+  }
+ }
+}
 async function load(){const cases=await api('/api/v1/client/cases');if(!cases.length){$('cases').innerHTML='<div class="empty">No linked cases yet. Accept an invitation from your consultant to begin.</div>';return}
  const blocks=[];for(const c of cases){const requests=await api(`/api/v1/client/cases/${encodeURIComponent(c.id)}/requests`);
  const intake=c.application_type==='study_permit'?await renderStudyIntake(c.id):'';
- blocks.push(`<section class="card"><h2>${esc(c.title)} <span class="status">${esc(c.status)}</span></h2><p>${esc(c.application_type.replaceAll('_',' '))}</p><h3>Requested documents</h3>${requests.length?requests.map(r=>`<div class="request"><div><strong>${esc(r.title)}</strong><div class="meta">${esc(r.instructions)}${r.due_at?' · Due '+esc(new Date(r.due_at).toLocaleDateString()):''}</div></div>${r.status==='open'&&c.status!=='closed'?`<form data-request="${esc(r.id)}" data-case="${esc(c.id)}"><input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.txt" required aria-label="Upload ${esc(r.title)}"><button class="primary" type="submit">Upload</button></form>`:`<span class="status">${esc(r.status)}</span>`}</div>`).join(''):'<p>No outstanding document requests.</p>'}</section>${intake}`)}$('cases').innerHTML=blocks.join('');}
+ blocks.push(`<section class="card"><h2>${esc(c.title)} <span class="status">${esc(c.status)}</span></h2><p>${esc(c.application_type.replaceAll('_',' '))}</p><h3>Requested documents</h3>${requests.length?requests.map(r=>`<div class="request"><div><strong>${esc(r.title)}</strong><div class="meta">${esc(r.instructions)}${r.due_at?' · Due '+esc(new Date(r.due_at).toLocaleDateString()):''}</div></div>${r.status==='open'&&c.status!=='closed'?`<form data-request="${esc(r.id)}" data-case="${esc(c.id)}"><input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.txt" required aria-label="Upload ${esc(r.title)}"><button class="primary" type="submit">Upload</button></form>`:`<span class="status">${esc(r.status)}</span>`}</div>`).join(''):'<p>No outstanding document requests.</p>'}</section>${intake}`)}$('cases').innerHTML=blocks.join('');
+ for(const form of $('cases').querySelectorAll('form[data-intake]'))updateIntakeConditions(form);}
 async function init(){try{S.config=await fetch('/app/config',{cache:'no-store'}).then(r=>r.json());$('signin').onclick=login;
  $('signout').onclick=()=>{S.token=null;S.refresh=null;$('portal').classList.add('hidden');$('welcome').classList.remove('hidden');$('signout').classList.add('hidden');notice('Signed out of this browser session.')};
  $('refresh').onclick=()=>load().catch(e=>notice(e.message));
  $('claim').onsubmit=async e=>{e.preventDefault();try{await api('/api/v1/client/invitations/accept',{method:'POST',body:{token:$('token').value.trim()}});$('token').value='';notice('Invitation accepted.');await load()}catch(error){notice(error.message)}};
+ document.addEventListener('change',e=>{const form=e.target.closest('form[data-intake]');if(form)updateIntakeConditions(form)});
  document.addEventListener('submit',async e=>{
   const form=e.target.closest('form[data-intake]');
   if(!form)return;
@@ -65,6 +81,7 @@ async function init(){try{S.config=await fetch('/app/config',{cache:'no-store'})
   try{
    const answers={};
    for(const element of form.querySelectorAll('[data-question-path]')){
+    if(element.disabled)continue;
     const value=(element.value||'').trim();
     if(value)answers[element.name]=value;
    }
