@@ -136,12 +136,14 @@ async function renderCase(){const [cases,clients,tasks,issues,facts,docs,readine
   const pulse=await api(q()+'/cases/'+S.caseId+'/preparation-pulse');
   const pulseCounts=Object.entries(pulse.area_counts).filter(([,value])=>value>0)
     .map(([key,value])=>h(key.replaceAll('_',' '))+': '+value).join(' · ');
-  const pulseList=pulse.worklist_items.map(item=>
+  S.preparationPulse=pulse;
+  const pulseList=pulse.worklist_items.map((item,index)=>
     '<div class="item-row"><div style="flex:1;min-width:0"><strong>'+
     h(item.label)+'</strong><div class="meta">'+h(item.area.replaceAll('_',' '))+
     ' · '+h(item.status.replaceAll('_',' '))+
-    (item.reference_id?' · Ref '+h(item.reference_id):'')+
-    '</div></div></div>').join('');
+    '</div></div><div class="push">'+
+    btn('Open '+item.target_tab.replaceAll('_',' '),'pulse:open:'+index,'smallbtn')+
+    '</div></div>').join('');
   const pulseHtml='<h3>Case preparation pulse</h3>'+
     '<div class="callout"><strong>'+pulse.unresolved_count+
     ' preliminary follow-ups</strong> · '+(pulseCounts||'No tracked issues')+
@@ -193,7 +195,7 @@ async function renderCase(){const [cases,clients,tasks,issues,facts,docs,readine
       ?btn('Add unverified record','repeatableDecision:'+proposal.id+':accept','smallbtn')+' '+
        btn('Dismiss','repeatableDecision:'+proposal.id+':dismiss','smallbtn')
       :chip(proposal.review_status);
-     body+='<div class="item-row"><div style="flex:1;min-width:0"><strong>'+h(proposal.kind)+
+     body+='<div class="item-row" tabindex="-1" data-pulse-ref="'+h(proposal.id)+'"><div style="flex:1;min-width:0"><strong>'+h(proposal.kind)+
        '</strong><div class="meta">'+details+'</div></div><div class="push">'+controls+'</div></div>';
    }
    if(!versions.length)body+=empty('No questionnaires received','Invite the fictional client through the Portal tab. The questionnaire appears automatically on their study-permit case.');
@@ -262,8 +264,12 @@ if(S.tab==='portal'){
    const [requests,submissions]=await Promise.all([api(root+'/requests'),api(root+'/submissions')]);
    content=panel('Client access and document intake',`<div class="panel-body"><div class="callout">Clients authenticate using a verified identity-provider email and a one-time invitation. A client sees only their linked case and its document requests. Uploaded files remain in quarantine until a malware scanner clears them.</div><p><a href="/client" target="_blank" rel="noopener noreferrer">Open the development client portal ↗</a></p><h3>Document requests</h3>${requests.length?requests.map(r=>`<div class="item-row"><div class="bullet">▤</div><div style="flex:1"><div class="item-title">${h(r.title)}</div><div class="meta">${h(r.document_type)} · ${h(r.instructions)} · Due ${d(r.due_at)}</div></div>${chip(r.status)}</div>`).join(''):empty('No document requests','Ask the client for a document.')}<h3>Client submissions</h3>${submissions.length?submissions.map(s=>`<div class="item-row"><div class="bullet">↥</div><div style="flex:1"><div class="item-title">Received submission ${h(s.id.slice(0,8))}</div><div class="meta">${d(s.created_at)} · ${h(s.document_id.slice(0,8))}</div></div>${chip(s.scan_status)} ${s.scan_status==='quarantined'?btn('Scan','scanSubmission:'+s.id,'smallbtn'):''}</div>`).join(''):empty('No client submissions','Client uploads will appear here after receipt.')}</div>`,btn('Create invitation','newPortalInvite','smallbtn')+' '+btn('+ Request document','newPortalRequest','primary smallbtn'));
  }
- if(S.tab==='tasks')content=panel('Case tasks',`<div class="panel-body">${tasks.length?tasks.map(t=>`<div class="item-row"><div class="bullet">☑</div><div style="flex:1"><div class="item-title">${h(t.title)}</div><div class="meta">Due ${d(t.due_at)}</div></div><div class="push">${chip(t.status)} ${t.status==='open'?btn('Complete','completeTask:'+t.id,'smallbtn'):''}</div></div>`).join(''):empty('No tasks','Add milestones or follow-up work.')}</div>`,btn('+ Add task','newTask','primary smallbtn'));
- if(S.tab==='issues')content=panel('Contradictions and resolutions',`<div class="panel-body">${issues.length?issues.map(i=>`<div class="item-row"><div class="bullet">!</div><div style="flex:1"><div class="item-title">${h(i.field_path)}</div><div class="meta">${h(i.description)}</div>${i.resolution?`<div class="evidence-preview">Resolution: ${h(i.resolution)}</div>`:''}</div><div class="push">${chip(i.status)} ${i.status==='open'?btn('Resolve','resolveIssue:'+i.id,'smallbtn'):''}</div></div>`).join(''):empty('No conflicts detected','Adding different values for the same fact will create a review issue.')}</div>`);
+ if(S.tab==='tasks')content=panel('Case tasks',`<div class="panel-body">${tasks.length?tasks.map(t=>`<div class="item-row" tabindex="-1" data-pulse-ref="${h(t.id)}"><div class="bullet">☑</div><div style="flex:1"><div class="item-title">${h(t.title)}</div><div class="meta">Due ${d(t.due_at)}</div></div><div class="push">${chip(t.status)} ${t.status==='open'?btn('Complete','completeTask:'+t.id,'smallbtn'):''}</div></div>`).join(''):empty('No tasks','Add milestones or follow-up work.')}</div>`,btn('+ Add task','newTask','primary smallbtn'));
+ if(S.tab==='issues')content=panel('Contradictions and resolutions',`<div class="panel-body">${issues.length?issues.map(i=>`<div class="item-row" tabindex="-1" data-pulse-ref="${h(i.id)}"><div class="bullet">!</div><div style="flex:1"><div class="item-title">${h(i.field_path)}</div><div class="meta">${h(i.description)}</div>${i.resolution?`<div class="evidence-preview">Resolution: ${h(i.resolution)}</div>`:''}</div><div class="push">${chip(i.status)} ${i.status==='open'?btn('Resolve','resolveIssue:'+i.id,'smallbtn'):''}</div></div>`).join(''):empty('No conflicts detected','Adding different values for the same fact will create a review issue.')}</div>`);
+ if(S.pulseFocus?.caseId===S.caseId&&S.pulseFocus.tab===S.tab){
+   content='<div class="callout pulse-location" role="status">From case preparation worklist: '+
+      h(S.pulseFocus.label)+'. Use the existing review controls below; no review decision has been made.</div>'+content;
+ }
  $('mainContent').innerHTML=`<div class="page-head"><div><div class="eyebrow"><button class="btn smallbtn" data-action="backCases">← All matters</button> &nbsp; / CASE WORKSPACE</div><h1 class="case-title">${h(c.title)}</h1><div class="detail-meta"><span>${h(c.application_type.replaceAll('_',' '))}</span><span>${h(client?client.first_name+' '+client.last_name:'Client')}</span>${chip(c.status)}</div></div><div>${c.status!=='closed'?btn('Change status','changeStatus','primary'):''}</div></div><div class="pillbar">${tabs.map(t=>`<button class="pilltab ${S.tab===t?'active':''}" data-tab="${t}">${h(t.charAt(0).toUpperCase()+t.slice(1))}${t==='issues'&&issues.filter(i=>i.status==='open').length?' · '+issues.filter(i=>i.status==='open').length:''}</button>`).join('')}</div>${content}`;
 }
 function modal(inner,handler){$('modalBody').innerHTML=inner;$('modalBackdrop').classList.remove('hidden');const form=$('modalBody').querySelector('form');if(form)form.addEventListener('submit',async e=>{e.preventDefault();let submit=form.querySelector('[type="submit"]');submit.disabled=true;try{await handler(form);closeModal();await firms();await render();toast('Saved successfully')}catch(err){toast(err.message||'Save failed')}finally{submit.disabled=false}})}
@@ -306,6 +312,33 @@ function changeStatus(){const caseObj=S.data.cases.find(x=>x.id===S.caseId);cons
  modal(`<h2>Update case status</h2><p>Status changes are recorded in the audit trail. This does not submit anything to IRCC.</p><form>${selectField('status','Next status',options.map(v=>[v,v.replaceAll('_',' ')]))}${fld('reason','Reason (required)','text','required minlength="10" maxlength="250"')}${actions('Update status')}</form>`,async f=>{await api(q()+`/cases/${S.caseId}/status`,{method:'PATCH',body:values(f)})})}
 async function downloadDoc(id){const doc=S.data.docs.find(x=>x.id===id);const res=await api(q()+`/cases/${S.caseId}/documents/${id}/download`,{raw:true});const blob=await res.blob();const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=doc?.filename||'document';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000)}
 async function eventHandler(e){const tab=e.target.closest('[data-tab]');if(tab){S.tab=tab.dataset.tab;return render().catch(fail)}const cRow=e.target.closest('[data-engagement-client]');if(cRow){S.engagementClientId=cRow.dataset.engagementClient;S.caseId=null;S.prospectId=null;S.view='clients';return render().catch(fail)}const prow=e.target.closest('[data-prospect]');if(prow){S.prospectId=prow.dataset.prospect;S.caseId=null;S.view='crm';return render().catch(fail)}const row=e.target.closest('[data-case]');if(row){S.caseId=row.dataset.case;S.view='cases';S.tab='overview';S.filingContext=null;S.prospectId=null;return render().catch(fail)}const act=e.target.closest('[data-action]');if(!act)return;const action=act.dataset.action;
+ if(action.startsWith('pulse:open:')){
+   const index=Number(action.slice('pulse:open:'.length));
+   const item=S.preparationPulse?.worklist_items?.[index];
+   const allowed=new Set(['package','intake','applicant','planning','issues','tasks','preflight']);
+   if(!Number.isSafeInteger(index)||!item||!allowed.has(item.target_tab))
+     return toast('Refresh the case preparation pulse and retry');
+   S.tab=item.target_tab;
+   S.pulseFocus={caseId:S.caseId,tab:item.target_tab,
+      referenceId:item.target_reference_id||null,code:item.code,
+      label:item.label};
+   if(item.target_tab==='planning'&&S.preparationPulse.filing_context)
+     S.filingContext=S.preparationPulse.filing_context;
+   await render();
+   const scope=$('mainContent');
+   const ref=S.pulseFocus.referenceId;
+   // Attribute selectors use only exact returned IDs and are escaped by scanning
+   // elements, not interpolating a user-controlled selector.
+   const target=ref?Array.from(scope.querySelectorAll('[data-pulse-ref]'))
+     .find(el=>el.dataset.pulseRef===ref):null;
+   if(target){
+     target.scrollIntoView({block:'center',behavior:'smooth'});
+     target.focus({preventScroll:true});
+   }else{
+     scope.querySelector('.pulse-location')?.scrollIntoView({block:'start',behavior:'smooth'});
+   }
+   return;
+ }
  if(action==='intake:open-applicant'){S.tab='applicant';return render().catch(fail)}
  try{
  if(action.startsWith('staff:'))return await staffAction(action);
