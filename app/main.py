@@ -220,6 +220,9 @@ from app.applicant_history import router as applicant_history_router
 app.include_router(applicant_history_router)
 from app.history_timeline_audit import router as history_timeline_audit_router
 app.include_router(history_timeline_audit_router)
+from app.timeline_clarifications import staff as timeline_clarification_staff_router, client as timeline_clarification_client_router
+app.include_router(timeline_clarification_staff_router)
+app.include_router(timeline_clarification_client_router)
 app.include_router(evidence_router)
 app.include_router(study_intake_client_router)
 app.include_router(study_intake_staff_router)
