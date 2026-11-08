@@ -24,12 +24,21 @@ def sample():
     )
 
 
-def test_registry_manifests_track_pinned_revision_and_six_fields():
+def test_registry_manifests_track_pinned_revision_and_guided_fields():
     for code in ("IMM1294", "IMM5709"):
         manifest = MANIFESTS[code]
         assert manifest.code == code
         assert manifest.entire_form_inventoried is False
-        assert len(expand_manifest(manifest, {})[0]["fields"]) == 6
+        expanded = expand_manifest(manifest, {})
+        assert len(expanded) == 2
+        assert len(expanded[0]["fields"]) == 6
+        assert len(expanded[1]["fields"]) == 8
+        assert manifest.manifest_version.endswith("-v2")
+        assert all(field["source_url"].startswith("https://www.canada.ca/")
+                   and field["source_section"]
+                   for field in expanded[1]["fields"])
+        assert all(field["required"] is False for field in expanded[1]["fields"])
+        assert manifest.entire_form_inventoried is False
         assert len(manifest.digest) == 64
         assert manifest.digest == manifest.digest
 
@@ -74,3 +83,22 @@ def test_malformed_manifests_are_rejected():
                      entire_form_inventoried=True)
     assert sample().digest != FormManifest(
         "TEST", "synthetic-r2", "test-v1", "test", sample().sections).digest
+
+
+def test_expanded_guidance_source_is_immutable_manifest_identity():
+    from app.form_manifest import GUIDED_FIELDS
+    from app.ircc_registry import REGISTRY
+    assert len({field[2] for field in GUIDED_FIELDS}) == 8
+    for code in ("IMM1294", "IMM5709"):
+        manifest = MANIFESTS[code]
+        assert all(row.source_url == REGISTRY[code].ircc_source_url
+                   for row in manifest.sections[1].fields)
+        assert len({field.canonical_path for section in manifest.sections
+                    for field in section.fields}) == 14
+        assert len(manifest.digest) == 64
+    with pytest.raises(ValueError):
+        FieldDefinition("passport", "Passport", "identity.passport_number",
+                        source_url="https://example.com/fake", source_section="Passport")
+    with pytest.raises(ValueError):
+        FieldDefinition("passport", "Passport", "identity.passport_number",
+                        source_url="https://www.canada.ca/official")
