@@ -83,3 +83,72 @@ def test_firm_member_without_client_access_cannot_read_master_profile(api):
     who["sub"] = "unassigned-consultant"
     assert client.get(base).status_code == 404
     assert client.put(base, json={"identity": {"given_name": "Other"}}).status_code == 404
+
+
+def test_family_snapshot_is_frozen_and_draft_freshness_changes(api):
+    client, who, factory = api
+    org, case, root = case_setup(api, "family-draft-freshness")
+    assert start(client, root, representative=False).status_code == 201
+    cid = next(row["client_id"] for row in client.get(
+        f"/api/v1/orgs/{org}/cases").json() if row["id"] == case)
+    applicant = f"/api/v1/orgs/{org}/clients/{cid}/applicant"
+    relative_url = f"/api/v1/orgs/{org}/clients/{cid}/family"
+    drafts = f"/api/v1/orgs/{org}/cases/{case}/answer-drafts"
+    assert client.put(applicant, json={"identity": {
+        "given_name": "Fictional", "family_name": "Client"}}).status_code == 200
+    relative = {"relationship": "child", "given_name": "Synthetic",
+                "family_name": "Child", "date_of_birth": "2010-01-02"}
+    first_member = client.post(relative_url, json=relative)
+    assert first_member.status_code == 201
+    member_id = first_member.json()["id"]
+    original = client.post(drafts)
+    assert original.status_code == 201, original.text
+    first = original.json()
+    assert first["source_freshness"] == "current"
+    assert first["family_snapshot"][0]["given_name"] == "Synthetic"
+    assert len(first["manifest_sha256"]) == 64
+    assert client.get(drafts).json()[0]["source_freshness"] == "current"
+
+    changed = client.put(relative_url + "/" + member_id, json={
+        **relative, "expected_version": 1, "given_name": "Updated"})
+    assert changed.status_code == 200, changed.text
+    historical = client.get(drafts).json()[0]
+    assert historical["source_freshness"] == "stale"
+    assert historical["family_snapshot"][0]["given_name"] == "Synthetic"
+    latest = client.post(drafts)
+    assert latest.status_code == 201, latest.text
+    assert latest.json()["family_snapshot"][0]["given_name"] == "Updated"
+    listed = client.get(drafts).json()
+    assert listed[0]["source_freshness"] == "current"
+    assert listed[1]["source_freshness"] == "stale"
+
+    added = client.post(relative_url, json={
+        "relationship": "parent", "given_name": "Another", "family_name": "Relative"})
+    assert added.status_code == 201
+    assert all(row["source_freshness"] == "stale" for row in client.get(drafts).json())
+
+
+def test_new_case_drafts_block_closed_matters_and_legacy_unknown(api):
+    from app.applicant_models import CaseAnswerDraft
+    from app.models import Case
+    from uuid import UUID
+    client, _, factory = api
+    org, case, root = case_setup(api, "family-draft-legacy")
+    assert start(client, root, representative=False).status_code == 201
+    cid = next(row["client_id"] for row in client.get(
+        f"/api/v1/orgs/{org}/cases").json() if row["id"] == case)
+    applicant = f"/api/v1/orgs/{org}/clients/{cid}/applicant"
+    drafts = f"/api/v1/orgs/{org}/cases/{case}/answer-drafts"
+    assert client.put(applicant, json={"identity": {"given_name": "Sample"}}).status_code == 200
+    original = client.post(drafts).json()
+    with factory() as db:
+        row = db.query(CaseAnswerDraft).filter(CaseAnswerDraft.id == UUID(original["id"])).one()
+        row.history_snapshot = {"records": []}  # historical record predating family tracking
+        db.commit()
+    assert client.get(drafts).json()[0]["source_freshness"] == "unknown_legacy"
+    with factory() as db:
+        row = db.query(Case).filter(Case.id == UUID(case)).one()
+        row.status = "closed"
+        db.commit()
+    assert client.post(drafts).status_code == 409
+    assert client.get(drafts).status_code == 200
