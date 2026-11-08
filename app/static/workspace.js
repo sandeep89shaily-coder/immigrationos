@@ -138,6 +138,7 @@ async function renderCase(){const [cases,clients,tasks,issues,facts,docs,readine
   }else{
    const result=await api(q()+'/cases/'+S.caseId+'/study-intake');
    const versions=result.submissions;
+   const repeatables=await api(q()+'/cases/'+S.caseId+'/repeatables');
    let worklist=null;
    try{worklist=await api(q()+'/cases/'+S.caseId+'/study-intake/worklist')}
    catch(e){if(!String(e.message).includes('409'))throw e}
@@ -164,6 +165,19 @@ async function renderCase(){const [cases,clients,tasks,issues,facts,docs,readine
       ' · Travel records: '+worklist.history_record_counts.travel+
       '. These are client/staff claims until independently reviewed.</p>'+
       '<p>'+btn('Review applicant and family information','intake:open-applicant','smallbtn')+'</p>';
+   }
+   body+='<h3>Client-submitted family and history records</h3>'+
+    '<p class="meta">'+repeatables.pending_count+
+    ' record(s) awaiting a consultant decision. Accepted records become unverified master claims only.</p>';
+   for(const proposal of repeatables.proposals){
+     const details=Object.entries(proposal.details).map(([key,value])=>
+       h(key.replaceAll('_',' '))+': '+h(value)).join(' · ');
+     const controls=proposal.review_status==='pending'
+      ?btn('Add unverified record','repeatableDecision:'+proposal.id+':accept','smallbtn')+' '+
+       btn('Dismiss','repeatableDecision:'+proposal.id+':dismiss','smallbtn')
+      :chip(proposal.review_status);
+     body+='<div class="item-row"><div style="flex:1;min-width:0"><strong>'+h(proposal.kind)+
+       '</strong><div class="meta">'+details+'</div></div><div class="push">'+controls+'</div></div>';
    }
    if(!versions.length)body+=empty('No questionnaires received','Invite the fictional client through the Portal tab. The questionnaire appears automatically on their study-permit case.');
    else{
