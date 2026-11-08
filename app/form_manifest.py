@@ -38,8 +38,17 @@ class FieldDefinition:
     canonical_path: str
     required: bool = True
     condition: Condition | None = None
+    source_url: str | None = None
+    source_section: str | None = None
 
     def __post_init__(self):
+        if (self.source_url is None) != (self.source_section is None):
+            raise ValueError("Source URL and section must be provided together")
+        if self.source_url is not None and (
+            not self.source_url.startswith("https://www.canada.ca/") or
+            not self.source_section or len(self.source_section) > 140
+        ):
+            raise ValueError("Only source-traceable IRCC guidance is supported")
         if not _ID.fullmatch(self.key) or not self.label.strip():
             raise ValueError("Invalid field definition")
         if not _PATH.fullmatch(self.canonical_path):
@@ -92,7 +101,9 @@ class FormManifest:
                      {"key": field.key, "label": field.label,
                       "canonical_path": field.canonical_path,
                       "required": field.required,
-                      "condition": condition_json(field.condition)}
+                      "condition": condition_json(field.condition),
+                      "source_url": field.source_url,
+                      "source_section": field.source_section}
                      for field in section.fields]}
                 for section in self.sections],
         }
@@ -159,7 +170,9 @@ def expand_manifest(manifest: FormManifest, verified_values: Mapping[str, str],
                         f"{field.canonical_path}.items.{index}")
                 fields.append({"key": field.key, "label": field.label,
                                "canonical_path": path, "required": field.required,
-                               "condition_state": state})
+                               "condition_state": state,
+                               "source_url": field.source_url,
+                               "source_section": field.source_section})
             rows.append({"section": section.key, "index": index,
                          "state": section_state, "fields": fields})
     return rows
@@ -175,6 +188,47 @@ def observed_subset_manifest(source: ObservedForm) -> FormManifest:
         sections=(SectionDefinition("observed", "Observed internal preview fields", fields),))
 
 
+# Questions listed in both official IMM1294 and IMM5709 instruction pages.
+# These identifiers are *internal* canonical paths, not observed XFA field IDs.
+# Optional here means the software has not established the conditional rules for
+# every applicant; it does not override the form's instructions.
+GUIDED_FIELDS: tuple[tuple[str, str, str, str], ...] = (
+    ("passport_issued_by", "Passport issuing country or territory",
+     "identity.passport_issuing_country", "Passport / Question 2"),
+    ("passport_issue_date", "Passport issue date",
+     "identity.passport_issue_date", "Passport / Question 3"),
+    ("passport_expiry_date", "Passport expiry date",
+     "identity.passport_expiry_date", "Passport / Question 4"),
+    ("institution_dli", "Designated Learning Institution number",
+     "education.dli_number", "Details of Intended Study in Canada / Question 2"),
+    ("study_from", "Expected study start date",
+     "education.program_start_date", "Details of Intended Study in Canada / Question 3"),
+    ("study_to", "Expected study end date",
+     "education.program_end_date", "Details of Intended Study in Canada / Question 3"),
+    ("tuition_cad", "Expected tuition in Canadian dollars",
+     "finance.tuition_cad", "Details of Intended Study in Canada / Question 4"),
+    ("available_funds_cad", "Available funds in Canadian dollars",
+     "finance.available_funds_cad", "Details of Intended Study in Canada / Question 5"),
+)
+
+
+def guided_subset_manifest(source: ObservedForm) -> FormManifest:
+    observed = observed_subset_manifest(source)
+    guided = SectionDefinition(
+        key="ircc_guided_extra",
+        title="Additional independently checked IRCC instruction questions",
+        fields=tuple(FieldDefinition(
+            key=key, label=label, canonical_path=path,
+            required=False, source_url=source.ircc_source_url,
+            source_section=section
+        ) for key, label, path, section in GUIDED_FIELDS))
+    return FormManifest(
+        code=source.code, form_revision=source.revision_label,
+        manifest_version="ircc-guidance-observed-subset-2026-11-08-v2",
+        filing_context=source.filing_context,
+        sections=(*observed.sections, guided))
+
+
 MANIFESTS: dict[str, FormManifest] = {
-    code: observed_subset_manifest(source) for code, source in REGISTRY.items()
+    code: guided_subset_manifest(source) for code, source in REGISTRY.items()
 }
