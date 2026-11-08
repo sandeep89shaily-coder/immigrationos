@@ -98,6 +98,10 @@ def audit_history_timeline(*, records: list[ApplicantHistory],
                               "end_date": end.isoformat(), "record_ids": []})
         # Education periods commonly overlap jobs; do not compare categories
         # or treat uncovered education as evidence of non-compliance.
+        for flag in flags:
+            flag["flag_sha256"] = sha256(json.dumps(
+                {"kind": kind, "flag": flag},
+                sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         report[kind] = {
             "record_count": len(items),
             "explicit_bounded_records_in_window": len(spans),
