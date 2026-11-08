@@ -10,7 +10,7 @@ def setup(api, slug, *, inside=False):
     client, _, _ = api
     org, case, root = case_setup(api, slug)
     result = start(client, root, representative=False,
-                   filing_context="inside_canada" if inside else "outside_canada")
+                   context="inside_canada" if inside else "outside_canada")
     assert result.status_code == 201, result.text
     cid = next(x["client_id"] for x in client.get(
         f"/api/v1/orgs/{org}/cases").json() if x["id"] == case)
