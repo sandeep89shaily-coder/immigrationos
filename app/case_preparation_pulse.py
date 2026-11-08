@@ -36,9 +36,19 @@ def compose_pulse(*, case, package, worklist, requirements, preflight,
                   clarification_decisions, corrections, issues, tasks):
     """Pure composition of already-reviewed domain states. No automatic verification."""
     items = []
+    # Targets are a closed vocabulary of existing case tabs, never arbitrary
+    # URLs or commands. The UI verifies that the destination belongs to this case.
+    TARGET_TAB = {
+        "package":"package", "intake":"intake",
+        "client_records":"intake", "timeline":"applicant",
+        "documents":"planning", "case_issues":"issues",
+        "case_tasks":"tasks", "form_preflight":"preflight",
+    }
     def add(area, code, state, label, *, ref=None, count=1):
         items.append({"area":area,"code":code,"status":state,"label":label,
                       "reference_id":str(ref) if ref is not None else None,
+                      "target_tab":TARGET_TAB[area],
+                      "target_reference_id":str(ref) if ref is not None else None,
                       "count":count})
 
     if package is None:
