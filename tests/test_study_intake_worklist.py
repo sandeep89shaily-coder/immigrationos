@@ -25,9 +25,9 @@ def test_worklist_exposes_missing_questions_without_values(api):
     assert result.headers["cache-control"] == "no-store"
     body = result.json()
     assert body["form_code"] == "IMM1294"
-    assert body["preliminary_question_count"] == 37
+    assert body["preliminary_question_count"] == 39
     assert body["document_verified_question_count"] == 0
-    assert len(body["questions_still_requiring_evidence_or_review"]) == 37
+    assert len(body["questions_still_requiring_evidence_or_review"]) == 39
     assert {q["status"] for q in body["questions"]} == {"missing_answer", "conditional_applicability_unresolved"}
     assert body["official_pdf_autofill_supported"] is False
     assert all("value" not in row for row in body["questions"])
@@ -123,7 +123,7 @@ def test_alias_national_id_and_expense_payer_conditions_reach_worklist(api):
     assert states["identity.other_family_name"]["status"] == "not_applicable_to_latest_answer"
     assert states["identity.national_id_number"]["condition_state"] == "active"
     assert states["finance.expenses_payer_details"]["status"] == "missing_answer"
-    assert data["preliminary_question_count"] == 37
+    assert data["preliminary_question_count"] == 39
     assert data["official_form_complete"] is False
 
 
