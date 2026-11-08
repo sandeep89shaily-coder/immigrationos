@@ -152,3 +152,24 @@ def test_pulse_destinations_are_existing_case_tabs_and_scoped_record_refs():
                for item in result["worklist_items"] if not item["reference_id"])
     assert all(not item["target_tab"].startswith(("http:", "https:", "/"))
                for item in result["worklist_items"])
+
+
+def test_occupation_lookback_routes_to_applicant_without_implying_readiness():
+    result=base(worklist={
+        "questions":[],
+        "preliminary_question_count":37,
+        "document_verified_question_count":0,
+        "employment_history_review":{
+            "status":"timeline_clarifications_needed",
+            "flag_types":["uncovered_period_for_review"],
+            "verified_complete":False,
+        },
+    })
+    item=next(x for x in result["worklist_items"]
+              if x["code"]=="occupation_history_10_year_review")
+    assert item["area"]=="timeline"
+    assert item["target_tab"]=="applicant"
+    assert item["reference_id"] is None
+    assert result["area_counts"]["timeline"]==1
+    assert result["operational_worklist_clear"] is False
+    assert result["entire_ircc_form_complete"] is False
