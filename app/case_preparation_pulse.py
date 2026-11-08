@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.access import OrgAccess, READ_ROLES, allow, get_org_access
 from app.applicant_history_models import ApplicantHistory
+from app.applicant_supplemental_history_models import ApplicantSupplementalHistory
 from app.applicant_models import ApplicantProfile, FamilyMember
 from app.db import get_db
 from app.document_requirements import _read as document_worklist
@@ -43,6 +44,7 @@ def compose_pulse(*, case, package, worklist, requirements, preflight,
         "client_records":"intake", "timeline":"applicant",
         "documents":"planning", "case_issues":"issues",
         "case_tasks":"tasks", "form_preflight":"preflight",
+        "supplemental":"applicant",
     }
     def add(area, code, state, label, *, ref=None, count=1):
         items.append({"area":area,"code":code,"status":state,"label":label,
@@ -88,6 +90,19 @@ def compose_pulse(*, case, package, worklist, requirements, preflight,
         add("form_preflight","preflight_unavailable","unsupported",
             "No supported internal form preflight")
 
+    # A separate action remains for inconsistent historical declarations or
+    # missing documentary evidence, even after a consultant accepts a claim.
+    if worklist is not None:
+        for check in worklist.get("supplemental_disclosure_review", []):
+            if check["status"] == "no_disclosure_reported":
+                continue
+            if check["status"] == "awaiting_staff_record_review":
+                # Existing client-record review items already link to each
+                # specific pending proposal; do not duplicate them here.
+                continue
+            add("supplemental", check["controller_path"], check["status"],
+                "Review " + check["kind"].replace("_", " ") +
+                " declaration, records and documentary support")
     resolved = {d.proposal_id for d in repeatable_decisions}
     for proposal in repeatables:
         if proposal.id not in resolved:
@@ -124,7 +139,7 @@ def compose_pulse(*, case, package, worklist, requirements, preflight,
             add("case_tasks","open_task","action_required",
                 "Review open case task",ref=task.id)
 
-    areas=("intake","client_records","timeline","documents",
+    areas=("intake","client_records","timeline","supplemental","documents",
            "case_issues","case_tasks","form_preflight","package")
     counts={area:sum(i["area"]==area for i in items) for area in areas}
     return {
@@ -173,6 +188,15 @@ def preparation_pulse(org_id:UUID,case_id:UUID,response:Response,
             FamilyMember.org_id==org_id,FamilyMember.client_id==case.client_id)).all()
         histories=db.scalars(select(ApplicantHistory).where(
             ApplicantHistory.org_id==org_id,ApplicantHistory.client_id==case.client_id)).all()
+        supplemental_records=db.scalars(select(ApplicantSupplementalHistory).where(
+            ApplicantSupplementalHistory.org_id==org_id,
+            ApplicantSupplementalHistory.client_id==case.client_id)).all()
+        proposal_rows=db.scalars(select(ClientRepeatableProposal).where(
+            ClientRepeatableProposal.org_id==org_id,
+            ClientRepeatableProposal.case_id==case_id)).all()
+        proposal_decision_rows=db.scalars(select(ClientRepeatableDecision).where(
+            ClientRepeatableDecision.org_id==org_id,
+            ClientRepeatableDecision.case_id==case_id)).all()
         submission=db.scalar(select(StudyIntakeSubmission).where(
             StudyIntakeSubmission.org_id==org_id,
             StudyIntakeSubmission.case_id==case_id
@@ -190,6 +214,8 @@ def preparation_pulse(org_id:UUID,case_id:UUID,response:Response,
             case=case,form_code=code,profile=profile,family=family,
             histories=histories,submission=submission,decisions=decisions,
             facts=facts,documents=documents,
+            supplemental_records=supplemental_records, proposals=proposal_rows,
+            proposal_decisions=proposal_decision_rows,
             scans=scan_status_by_document(db,org_id,case_id))
         requirements=document_worklist(db,org_id,case_id)
         source=REGISTRY[code]
