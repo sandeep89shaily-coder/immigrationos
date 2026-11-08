@@ -7,6 +7,13 @@ async function renderApplicantCase(clientId){
    api(applicantRoot(clientId)),api(q()+'/cases/'+encodeURIComponent(S.caseId)+'/answer-drafts'),
    api(q()+'/clients/'+encodeURIComponent(clientId)+'/histories'),
    api(q()+'/cases/'+encodeURIComponent(S.caseId)+'/history-evidence-review')]);
+ if(S.timelineAudit&&S.timelineAudit.caseId===S.caseId){
+   const previous=S.timelineAudit.data;
+   const query='?start_date='+encodeURIComponent(previous.window_start)+
+     '&end_date='+encodeURIComponent(previous.window_end);
+   S.timelineAudit.data=await api(q()+'/cases/'+encodeURIComponent(S.caseId)+
+     '/history-timeline-audit'+query);
+ }
  S.applicantClientId=clientId;
  S.applicantMaster=master;
  S.applicantHistories=histories.records;
