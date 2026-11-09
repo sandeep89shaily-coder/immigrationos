@@ -103,3 +103,20 @@ def test_missing_and_corrupt_xfa_fail_closed():
     assert _check(original, original)["blocker"] == "signed_original_prefix_not_preserved"
     reader = PdfReader(BytesIO(output), strict=True)
     assert len(reader.pages) == 1
+
+
+def test_password_protected_original_remains_blocked():
+    original, output = synthetic_incremental_pair()
+    # The verifier must not use a guessed password or silently rewrite a
+    # protected document to make an XFA trial pass.
+    reader = PdfReader(BytesIO(original))
+    writer = PdfWriter()
+    writer.append(reader)
+    writer.encrypt(user_password="private-test-password")
+    stream = BytesIO()
+    writer.write(stream)
+    password_original = stream.getvalue()
+    result = verify(password_original, output,
+                    expected_input_hash=sha256(password_original).hexdigest())
+    assert result["status"] == "blocked"
+    assert result["blocker"] == "signed_original_prefix_not_preserved"

@@ -119,8 +119,14 @@ def verify(original: bytes, output: bytes, *, expected_input_hash: str,
         result["original_prefix_preserved"] = True
         original_reader = PdfReader(BytesIO(original), strict=True)
         reader = PdfReader(BytesIO(output), strict=True)
-        if original_reader.is_encrypted or reader.is_encrypted:
-            raise ValueError("encrypted_pdf")
+        # Official IMM5476 uses standard PDF encryption with an empty user
+        # password. Refuse PDFs that cannot be opened normally; never bypass
+        # the document's password or rewrite its signed original bytes.
+        for candidate in (original_reader, reader):
+            if candidate.is_encrypted and candidate.decrypt("") == 0:
+                raise ValueError("password_protected_pdf")
+        result["original_standard_encryption"] = original_reader.is_encrypted
+        result["output_standard_encryption"] = reader.is_encrypted
         if len(original_reader.pages) != len(reader.pages):
             raise ValueError("page_count_changed")
         if official and len(reader.pages) != 4:
