@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.access import OrgAccess, READ_ROLES, allow, get_org_access
 from app.db import get_db
 from app.form_preparation_models import FormPreparationPacket
+from app.form_evidence_coverage import reviewed_subset_report
 from app.ircc_registry import REGISTRY
 from app.main import record_event
 from app.models import Case, CaseDocument, CaseFact, CaseIssue
@@ -27,7 +28,7 @@ from app.schemas import Role
 router = APIRouter(prefix="/api/v1/orgs/{org_id}/cases/{case_id}/form-preparation",
                    tags=["form-preparation"])
 EDITORS = {Role.owner, Role.admin, Role.consultant}
-MAPPING_VERSION = "canonical-study-preview-v1"
+MAPPING_VERSION = "canonical-study-reviewed-manifest-v2"
 MAX_SNAPSHOTS = 30
 
 
@@ -106,10 +107,27 @@ def _render_snapshot(db, org_id, case_id):
         })
     if any(f["status"] != "verified_subset_field" for f in fields):
         blocked.append("required_preview_fields_unresolved")
+    # The six legacy preview fields are no longer a sufficient packet gate.
+    # Recheck the full current INTERNAL manifest, including conditional
+    # applicability and date/choice syntax, before capturing any snapshot.
+    coverage = reviewed_subset_report(
+        source=source, case=case, facts=facts, documents=docs,
+        scan_status=scans, open_issue_count=len(issues))
+    if not coverage["verified_internal_subset"]:
+        blocked.append("current_internal_manifest_unresolved")
+    if coverage["source_recheck_required"]:
+        blocked.append("current_internal_manifest_source_stale")
     data = {"case_id": str(case_id), "package_id": str(pkg.id),
             "form_code": source.code, "source_revision": source.revision_label,
             "source_observed_on": source.last_checked.isoformat(),
             "mapping_version": MAPPING_VERSION, "fields": fields,
+            "manifest_version": coverage["manifest_version"],
+            "manifest_sha256": coverage["manifest_sha256"],
+            "manifest_coverage_sha256": coverage["snapshot_sha256"],
+            "manifest_field_count": coverage["internal_preview_field_count"],
+            "manifest_verified_field_count": coverage["verified_preview_field_count"],
+            "manifest_unresolved_condition_count": sum(
+                x["status"] == "unresolved_condition" for x in coverage["fields"]),
             "blockers": sorted(set(blocked))}
     digest = hashlib.sha256(json.dumps(data, ensure_ascii=False, sort_keys=True,
                                        separators=(",", ":")).encode("utf-8")).hexdigest()
@@ -119,7 +137,7 @@ def _render_snapshot(db, org_id, case_id):
             "official_pdf_autofill_supported": False,
             "official_ircc_validation_verified": False,
             "submission_supported": False,
-            "warning": "Only a small canonical internal field subset is covered. No official IRCC PDF field names, barcode generation, signature validation or submission."}
+            "warning": "The current partial 24-field internal manifest and legacy preview are checked together. This is not a complete official IRCC form; no validated PDF, barcode or submission."}
 
 
 def _view(packet):
@@ -128,6 +146,11 @@ def _view(packet):
             "mapping_version": packet.mapping_version,
             "snapshot_sha256": packet.snapshot_sha256,
             "fields": packet.field_snapshot["fields"],
+            "manifest_version": packet.field_snapshot.get("manifest_version"),
+            "manifest_sha256": packet.field_snapshot.get("manifest_sha256"),
+            "manifest_coverage_sha256": packet.field_snapshot.get("manifest_coverage_sha256"),
+            "manifest_field_count": packet.field_snapshot.get("manifest_field_count"),
+            "manifest_verified_field_count": packet.field_snapshot.get("manifest_verified_field_count"),
             "blockers": packet.blocker_snapshot,
             "verified_subset_complete": packet.verified_subset_complete,
             "created_at": packet.created_at.isoformat(),
@@ -173,7 +196,10 @@ def capture_packet(org_id: UUID, case_id: UUID, payload: CapturePacket,
         form_code=snapshot["form_code"], source_revision=snapshot["source_revision"],
         mapping_version=snapshot["mapping_version"],
         snapshot_sha256=snapshot["snapshot_sha256"],
-        field_snapshot={"fields": snapshot["fields"]},
+        field_snapshot={key: snapshot[key] for key in (
+            "fields", "manifest_version", "manifest_sha256",
+            "manifest_coverage_sha256", "manifest_field_count",
+            "manifest_verified_field_count")},
         blocker_snapshot=snapshot["blockers"], verified_subset_complete=True,
         created_by_sub=access.principal.sub)
     db.add(pkt)
