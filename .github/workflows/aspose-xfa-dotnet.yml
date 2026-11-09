@@ -5,6 +5,11 @@ on:
       - "experiments/AsposeXfaTrial/**"
       - ".github/workflows/aspose-xfa-dotnet.yml"
   workflow_dispatch:
+    inputs:
+      official_blank_artifact_run_id:
+        description: 'Optional trusted same-repository run containing imm5476-official-blank artifact; pinned SHA required'
+        required: false
+        type: string
 permissions:
   contents: read
 jobs:
@@ -26,38 +31,59 @@ jobs:
         run: dotnet restore experiments/AsposeXfaTrial/AsposeXfaTrial.csproj
       - name: Build native C# XFA writer
         run: dotnet build --no-restore experiments/AsposeXfaTrial/AsposeXfaTrial.csproj -c Release
-      - name: Fetch exact official IMM5476 government PDF and verify SHA-256
+      - name: Acquire exact official IMM5476 from IRCC or verified same-repository artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FIXTURE_RUN_ID: ${{ inputs.official_blank_artifact_run_id || '' }}
+          GH_REPO: ${{ github.repository }}
         run: |
           mkdir -p trial-out
-          python - <<'PY'
+          if [ -n "$FIXTURE_RUN_ID" ]; then
+            if ! [[ "$FIXTURE_RUN_ID" =~ ^[0-9]{1,20}$ ]]; then
+              echo "::error::Invalid same-repository artifact workflow run ID"
+              exit 2
+            fi
+            gh run download "$FIXTURE_RUN_ID" --repo "$GH_REPO" --name imm5476-official-blank --dir "$RUNNER_TEMP"
+          else
+            python - <<'PY'
           from urllib.request import Request, urlopen
-          import hashlib
-          import os
           from pathlib import Path
+          import os, time
           url=("https://www.canada.ca/content/dam/ircc/documents/pdf/english/"
                "kits/forms/imm5476/01-11-2025/imm5476e.pdf")
-          expected="aca5c476b93d1c496b1afbc2cfe843499e852e31dcf0c192153bd01f8d6c56c4"
-          import time
-          from urllib.error import HTTPError
-          raw=None
-          for attempt in range(1,5):
+          destination=Path(os.environ["RUNNER_TEMP"])/"imm5476-blank.pdf"
+          for attempt in range(1,4):
               try:
-                  req=Request(url,headers={"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0","Accept":"application/pdf"})
-                  with urlopen(req,timeout=45) as response:
-                      candidate=response.read(12*1024*1024+1)
-                  digest=hashlib.sha256(candidate).hexdigest()
-                  if not candidate.startswith(b"%PDF-") or digest != expected:
-                      raise SystemExit("Official blank changed or is not PDF; refusing alternate bytes")
-                  raw=candidate
+                  request=Request(url,headers={"User-Agent":"Mozilla/5.0",
+                              "Accept":"application/pdf"})
+                  with urlopen(request,timeout=25) as response:
+                      raw=response.read(12_582_913)
+                  if len(raw)>12_582_912 or not raw.startswith(b"%PDF-"):
+                      raise ValueError("Official source returned invalid or oversized PDF")
+                  destination.write_bytes(raw)
                   break
-              except (OSError, TimeoutError) as exc:
-                  print("Official source attempt",attempt,"error",type(exc).__name__)
-                  if attempt < 4:
-                      time.sleep(attempt * 2)
-          if raw is None:
-              raise SystemExit("Official blank download repeatedly unavailable; no XFA run")
-          print("official_pdf_bytes",len(raw),"exact_sha256_match",True)
-          (Path(os.environ["RUNNER_TEMP"]) / "imm5476-blank.pdf").write_bytes(raw)
+              except (OSError,TimeoutError) as exc:
+                  print("IRCC source acquisition attempt",attempt,"failed:",type(exc).__name__)
+                  if attempt<3:
+                      time.sleep(attempt*2)
+          if not destination.exists():
+              raise SystemExit("IRCC_SOURCE_UNAVAILABLE: no blank PDF acquired; Aspose writer NOT RUN. "
+                               "Supply a same-repository workflow artifact with the pinned official PDF.")
+          PY
+          fi
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, os
+          path=Path(os.environ["RUNNER_TEMP"])/"imm5476-blank.pdf"
+          if not path.is_file():
+              raise SystemExit("OFFICIAL_FIXTURE_MISSING")
+          raw=path.read_bytes()
+          sha=hashlib.sha256(raw).hexdigest()
+          expected="aca5c476b93d1c496b1afbc2cfe843499e852e31dcf0c192153bd01f8d6c56c4"
+          if sha!=expected or len(raw)>12_582_912 or not raw.startswith(b"%PDF-"):
+              path.unlink(missing_ok=True)
+              raise SystemExit("OFFICIAL_FIXTURE_SHA256_MISMATCH: refusing untrusted revision")
+          print("official_imm5476_fixture_verified_sha256",sha)
           PY
       - name: Native .NET XFA field population, fictional data only
         run: |
@@ -66,33 +92,15 @@ jobs:
             "$RUNNER_TEMP/imm5476-blank.pdf" \
             "trial-out/IMM5476-ASPOSE-NATIVE-FICTIONAL-UNVALIDATED.pdf" \
             "trial-out/aspose-dotnet-report.json"
-      - name: Independent XFA datasets readback
+      - name: Independent strict XFA/AcroForm readback and original-prefix validation
         run: |
           python -m pip install 'pypdf>=6,<7'
-          python - <<'PY'
-          from pathlib import Path
-          from pypdf import PdfReader
-          import xml.etree.ElementTree as ET
-          path=Path("trial-out/IMM5476-ASPOSE-NATIVE-FICTIONAL-UNVALIDATED.pdf")
-          reader=PdfReader(path,strict=True)
-          assert len(reader.pages)==4
-          fields=reader.get_fields() or {}
-          expected={
-              "IMM_5476[0].Page1[0].SectionA[0].familyName[0]":"Sharma",
-              "IMM_5476[0].Page1[0].SectionA[0].givenName[0]":"Aarav",
-              "IMM_5476[0].Page1[0].SectionB[0].familyName[0]":"Kapoor",
-              "IMM_5476[0].Page1[0].SectionB[0].givenName[0]":"Anita",
-          }
-          checked={key:str(fields.get(key,{}).get("/V",""))==value
-                   for key,value in expected.items()}
-          print("AcroForm field verification:",checked)
-          if not all(checked.values()):
-              raise SystemExit("Native .NET PDF did not preserve expected form values")
-          original=Path(__import__("os").environ["RUNNER_TEMP"])/"imm5476-blank.pdf"
-          if not path.read_bytes().startswith(original.read_bytes()):
-              raise SystemExit("Incremental result changed signed original PDF bytes")
-          print("Original signed byte prefix preserved")
-          PY
+          python scripts/verify_xfa_trial_readback.py \
+            --original "$RUNNER_TEMP/imm5476-blank.pdf" \
+            --output "trial-out/IMM5476-ASPOSE-NATIVE-FICTIONAL-UNVALIDATED.pdf" \
+            --report "trial-out/independent-readback.json" \
+            --expected-input-sha256 aca5c476b93d1c496b1afbc2cfe843499e852e31dcf0c192153bd01f8d6c56c4 \
+            --official-imm5476
       - name: Archive fictional evaluation output and technical diagnostics
         if: always()
         uses: actions/upload-artifact@v4
