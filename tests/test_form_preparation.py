@@ -47,7 +47,7 @@ def test_inside_study_permit_has_correct_internal_preview_context(api):
     root = f"/api/v1/orgs/{org}/cases/{case}/form-preparation"
     data = client.get(root + "/preview").json()
     assert data["form_code"] == "IMM5709"
-    assert data["mapping_version"] == "canonical-study-preview-v1"
+    assert data["mapping_version"] == "canonical-study-reviewed-manifest-v2"
     assert data["submission_supported"] is False
 
 
