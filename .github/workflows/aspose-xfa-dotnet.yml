@@ -1,0 +1,110 @@
+name: Native Aspose .NET XFA compatibility proof (experimental)
+on:
+  pull_request:
+    paths:
+      - "experiments/AsposeXfaTrial/**"
+      - ".github/workflows/aspose-xfa-dotnet.yml"
+  workflow_dispatch:
+    inputs:
+      official_blank_artifact_run_id:
+        description: 'Optional trusted same-repository run containing imm5476-official-blank artifact; pinned SHA required'
+        required: false
+        type: string
+permissions:
+  contents: read
+jobs:
+  native-dotnet-xfa:
+    runs-on: windows-latest
+    timeout-minutes: 18
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore official Aspose.PDF .NET trial package
+        run: dotnet restore experiments/AsposeXfaTrial/AsposeXfaTrial.csproj
+      - name: Build native C# XFA writer
+        run: dotnet build --no-restore experiments/AsposeXfaTrial/AsposeXfaTrial.csproj -c Release
+      - name: Acquire exact official IMM5476 from IRCC or verified same-repository artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FIXTURE_RUN_ID: ${{ inputs.official_blank_artifact_run_id || '' }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir -p trial-out
+          if [ -n "$FIXTURE_RUN_ID" ]; then
+            if ! [[ "$FIXTURE_RUN_ID" =~ ^[0-9]{1,20}$ ]]; then
+              echo "::error::Invalid same-repository artifact workflow run ID"
+              exit 2
+            fi
+            gh run download "$FIXTURE_RUN_ID" --repo "$GH_REPO" --name imm5476-official-blank --dir "$RUNNER_TEMP"
+          else
+            python - <<'PY'
+          from urllib.request import Request, urlopen
+          from pathlib import Path
+          import os, time
+          url=("https://www.canada.ca/content/dam/ircc/documents/pdf/english/"
+               "kits/forms/imm5476/01-11-2025/imm5476e.pdf")
+          destination=Path(os.environ["RUNNER_TEMP"])/"imm5476-blank.pdf"
+          for attempt in range(1,4):
+              try:
+                  request=Request(url,headers={"User-Agent":"Mozilla/5.0",
+                              "Accept":"application/pdf"})
+                  with urlopen(request,timeout=25) as response:
+                      raw=response.read(12_582_913)
+                  if len(raw)>12_582_912 or not raw.startswith(b"%PDF-"):
+                      raise ValueError("Official source returned invalid or oversized PDF")
+                  destination.write_bytes(raw)
+                  break
+              except (OSError,TimeoutError) as exc:
+                  print("IRCC source acquisition attempt",attempt,"failed:",type(exc).__name__)
+                  if attempt<3:
+                      time.sleep(attempt*2)
+          if not destination.exists():
+              raise SystemExit("IRCC_SOURCE_UNAVAILABLE: no blank PDF acquired; Aspose writer NOT RUN. "
+                               "Supply a same-repository workflow artifact with the pinned official PDF.")
+          PY
+          fi
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, os
+          path=Path(os.environ["RUNNER_TEMP"])/"imm5476-blank.pdf"
+          if not path.is_file():
+              raise SystemExit("OFFICIAL_FIXTURE_MISSING")
+          raw=path.read_bytes()
+          sha=hashlib.sha256(raw).hexdigest()
+          expected="aca5c476b93d1c496b1afbc2cfe843499e852e31dcf0c192153bd01f8d6c56c4"
+          if sha!=expected or len(raw)>12_582_912 or not raw.startswith(b"%PDF-"):
+              path.unlink(missing_ok=True)
+              raise SystemExit("OFFICIAL_FIXTURE_SHA256_MISMATCH: refusing untrusted revision")
+          print("official_imm5476_fixture_verified_sha256",sha)
+          PY
+      - name: Native .NET XFA field population, fictional data only
+        run: |
+          dotnet run --no-build --project experiments/AsposeXfaTrial/AsposeXfaTrial.csproj \
+            --configuration Release -- \
+            "$RUNNER_TEMP/imm5476-blank.pdf" \
+            "trial-out/IMM5476-ASPOSE-NATIVE-FICTIONAL-UNVALIDATED.pdf" \
+            "trial-out/aspose-dotnet-report.json"
+      - name: Independent strict XFA/AcroForm readback and original-prefix validation
+        run: |
+          python -m pip install 'pypdf>=6,<7'
+          python scripts/verify_xfa_trial_readback.py \
+            --original "$RUNNER_TEMP/imm5476-blank.pdf" \
+            --output "trial-out/IMM5476-ASPOSE-NATIVE-FICTIONAL-UNVALIDATED.pdf" \
+            --report "trial-out/independent-readback.json" \
+            --expected-input-sha256 aca5c476b93d1c496b1afbc2cfe843499e852e31dcf0c192153bd01f8d6c56c4 \
+            --official-imm5476
+      - name: Archive fictional evaluation output and technical diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: imm5476-aspose-dotnet-trial
+          path: trial-out/
+          retention-days: 7
