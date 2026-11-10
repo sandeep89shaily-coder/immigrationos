@@ -17,6 +17,7 @@ jobs:
       - name: Observe official IRCC index — NO automated catalog publication
         run: python -m scripts.observe_ircc_catalog --output reports/ircc-index.json
       - name: Upload research-only observation
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ircc-index-observation
