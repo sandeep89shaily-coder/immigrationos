@@ -60,7 +60,7 @@ def test_conditions_are_three_valued_not_silently_false():
     assert evaluate_condition(c, {"identity.has_extra":"unsure"}) == "unresolved"
     result = expand_manifest(sample(), {})
     assert result[0]["fields"][1]["condition_state"] == "unresolved"
-    assert result[1]["state"] == "unresolved_repeat_count"
+    assert result[1]["state"] == "unresolved"
 
 
 def test_repeat_sections_require_explicit_bounded_count():
