@@ -65,6 +65,17 @@ def resolve_manifest_evidence(
             path: parent_packet.values[name] for name, path in parent_map.items()
         }
 
+    # A verified affirmative declaration cannot be reconciled with an
+    # explicitly empty repeated collection; don't produce a false complete
+    # packet just because the caller supplied zero items.
+    for section in manifest.sections:
+        condition = section.condition
+        if (section.repeatable and condition is not None
+                and condition.operator == "equals" and condition.expected == "yes"
+                and verified_conditions.get(condition.field_path) == "yes"
+                and repeats is not None and repeats.get(section.key) == 0):
+            raise FormMappingBlocked("Affirmative repeat declaration cannot have zero records")
+
     try:
         sections = expand_manifest(manifest, verified_conditions, repeats)
     except ValueError as exc:
