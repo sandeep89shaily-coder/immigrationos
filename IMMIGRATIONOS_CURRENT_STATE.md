@@ -19,3 +19,6 @@ Last inspected: 2026-11-11. Base `main` commit: `b35181c76b5918dc069fa2bcb9c5ea0
 
 ## Technical blockers
 Official version-specific field coverage, vendor SaaS rights, Adobe save/reopen/validate and barcode/signature acceptance; complete table-level case RLS, threat assessment and production secrets/key management; realistic end-to-end RCIC practitioner workflow and competitor acceptance benchmarks.
+
+## 2026-11-11 checkpoint: manifest resolver
+PR #61 was squash-merged as `e463d9621afcc1a61cdf68bf88198607123a9531`, after unit, PostgreSQL-isolation and IMM5476 read-only probe checks passed. Branch `feature/versioned-manifest-evidence-resolver` adds a review-only, version-bound, case-evidence resolver with conditional parents, explicit repeat counts and deterministic internal keys. This branch is not yet merged; test results pending. Counts remain caller assertions rather than verified family cardinality. No official IRCC PDF support is approved.
