@@ -51,6 +51,7 @@ def resolve_manifest_evidence(
                 parents.add(field.condition.field_path)
 
     verified_conditions: dict[str, str] = {}
+    condition_evidence_sha256: str | None = None
     if parents:
         parent_map = {f"condition_{i}": path
                       for i, path in enumerate(sorted(parents))}
@@ -64,6 +65,7 @@ def resolve_manifest_evidence(
         verified_conditions = {
             path: parent_packet.values[name] for name, path in parent_map.items()
         }
+        condition_evidence_sha256 = parent_packet.source_sha256
 
     # A verified affirmative declaration cannot be reconciled with an
     # explicitly empty repeated collection; don't produce a false complete
@@ -114,6 +116,7 @@ def resolve_manifest_evidence(
         "filing_context": manifest.filing_context,
         "field_to_canonical": field_map,
         "evidence_sha256": resolved.source_sha256,
+        "condition_evidence_sha256": condition_evidence_sha256,
         "explicit_repeats": dict(sorted((repeats or {}).items())),
     }
     digest = sha256(json.dumps(identity, sort_keys=True, ensure_ascii=False,
