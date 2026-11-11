@@ -26,3 +26,6 @@ Inspect main and PRs before changes; branch → tests → PR → inspect CI → 
 
 ## Current checkpoint: versioned evidence-to-manifest resolver
 Review `feature/versioned-manifest-evidence-resolver`; check CI and ensure independently reviewed, scan-cleared, tenant/case scoped condition parent facts; verify unknown parents and absent counts fail closed. Next build authoritative repeat-cardinality evidence, cross-field validation and version-pinned preparation packet integration. Do not expose these internal field keys as official IRCC XFA identifiers.
+
+## Current P0: case preparation integration
+Review `feature/preparation-manifest-resolver-gate`; run unit, PostgreSQL-isolation and read-only probe CI. Check that a completed 18-applicable-field conditional subset stores a version/provenance hash; six-field-only packets cannot bypass the new gate; a resolver/coverage disagreement cannot capture. Follow with cross-field date constraints, authoritative repeat-cardinality and source-refresh handling. Do not claim official PDF compatibility.
