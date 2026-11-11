@@ -29,3 +29,9 @@ Review `feature/versioned-manifest-evidence-resolver`; check CI and ensure indep
 
 ## Current P0: case preparation integration
 Review `feature/preparation-manifest-resolver-gate`; run unit, PostgreSQL-isolation and read-only probe CI. Check that a completed 18-applicable-field conditional subset stores a version/provenance hash; six-field-only packets cannot bypass the new gate; a resolver/coverage disagreement cannot capture. Follow with cross-field date constraints, authoritative repeat-cardinality and source-refresh handling. Do not claim official PDF compatibility.
+
+## Next unfinished P0 following merged PR #63
+1. Add authoritative independently reviewed repeat-record cardinality and prevent inconsistent count assertions before exposing repeatable manifest integration in live case workflows.
+2. Cross-field validation for chronology (passport validity, education dates), unresolved conditional assertions and source revision freshness; retain fail-closed capture semantics.
+3. Complete one revision-pinned official IRCC form field inventory and independent PDF engine SaaS-license and Adobe/IRCC validation gates. Until then zero official validated outputs.
+4. Broaden case-document package + RCIC sign-off with case-bound immutable provenance and restricted-role PostgreSQL tests.
