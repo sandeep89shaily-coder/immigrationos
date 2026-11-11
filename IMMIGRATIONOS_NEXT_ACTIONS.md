@@ -23,3 +23,6 @@ Communications, deadlines, tasks, invoices/trust accounting after end-to-end cas
 
 ## Session discipline
 Inspect main and PRs before changes; branch → tests → PR → inspect CI → update these four handoff files. No background development claim.
+
+## Current checkpoint: versioned evidence-to-manifest resolver
+Review `feature/versioned-manifest-evidence-resolver`; check CI and ensure independently reviewed, scan-cleared, tenant/case scoped condition parent facts; verify unknown parents and absent counts fail closed. Next build authoritative repeat-cardinality evidence, cross-field validation and version-pinned preparation packet integration. Do not expose these internal field keys as official IRCC XFA identifiers.
