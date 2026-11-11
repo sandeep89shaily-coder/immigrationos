@@ -25,3 +25,6 @@ PR #61 was squash-merged as `e463d9621afcc1a61cdf68bf88198607123a9531`, after un
 
 ## 2026-11-11: integrated case-preparation resolver gate (review branch)
 PR #62 passed unit, PostgreSQL isolation and read-only probe checks and was squash-merged at `424d9f1bfaa9f0d9de09ac5bc4db8802427d97f7`. Branch `feature/preparation-manifest-resolver-gate` now makes existing study-permit form packet previews and captures run the versioned internal resolver in addition to the established 24-field coverage check. Captured snapshots preserve the mapping evidence fingerprint and resolved field count. Failure to resolve blocks new capture. This is review-only, not official PDF support. Tests and CI for this branch require verification.
+
+## Verified 2026-11-11 integration result
+PR #63 (`feature/preparation-manifest-resolver-gate`) passed unit tests, PostgreSQL-isolation and IMM5476 read-only probe CI checks on head `3c325435fc98d88b357172a107807640adcb5505` and was squash-merged into `main` as `44fbaab106b412e780e15d68f00ccc5c64632f63`. The 24-field internal study-permit preparation capture now checks the independently resolved versioned manifest and saves a provenance fingerprint plus internally resolved field count. Earlier statements calling this branch pending are superseded. Official IRCC PDF generation, filing and commercial licensing remain unapproved.
