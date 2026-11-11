@@ -132,3 +132,18 @@ def test_cross_case_and_unreviewed_parent_never_drives_conditions():
     facts[1].case_id = uuid4()
     with pytest.raises(FormMappingBlocked, match="different matter"):
         resolve(manifest(), org, case, docs, facts, scans)
+
+
+def test_condition_controller_source_change_invalidates_snapshot():
+    org, case, docs, facts, scans, add = fixture()
+    add("identity.given_name", "Sample")
+    add("identity.has_alias", "no")
+    add("history.has_employment", "no")
+    initial = resolve(manifest(), org, case, docs, facts, scans)
+    # This controller never becomes a rendered field; nevertheless its
+    # evidence provenance must be part of the packet identity.
+    controller_doc = next(d for d in docs if d.id == facts[-1].document_id)
+    controller_doc.sha256 = "f" * 64
+    subsequent = resolve(manifest(), org, case, docs, facts, scans)
+    assert initial.resolved.source_sha256 == subsequent.resolved.source_sha256
+    assert initial.snapshot_sha256 != subsequent.snapshot_sha256
