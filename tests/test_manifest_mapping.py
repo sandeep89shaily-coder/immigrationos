@@ -110,6 +110,8 @@ def test_active_repeat_requires_explicit_count_and_all_instance_evidence():
         add(path, value)
     with pytest.raises(FormMappingBlocked, match="count unresolved"):
         resolve(manifest(), org, case, docs, facts, scans)
+    with pytest.raises(FormMappingBlocked, match="Affirmative repeat declaration"):
+        resolve(manifest(), org, case, docs, facts, scans, {"history": 0})
     with pytest.raises(FormMappingBlocked, match="Missing or contradictory"):
         resolve(manifest(), org, case, docs, facts, scans, {"history": 2})
     packet = resolve(manifest(), org, case, docs, facts, scans, {"history": 1})
