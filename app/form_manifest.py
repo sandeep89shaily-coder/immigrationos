@@ -148,15 +148,20 @@ def expand_manifest(manifest: FormManifest, verified_values: Mapping[str, str],
     for section in manifest.sections:
         section_state = evaluate_condition(section.condition, verified_values)
         if section.repeatable:
+            # Validate supplied counts even when a conditional section is hidden;
+            # malformed inputs must never be silently accepted.
             count = repeats.get(section.key)
+            if count is not None and (type(count) is not int or count < 0 or count > MAX_REPEATS):
+                raise ValueError("Repeat count out of bounds")
+            # A verified-negative parent makes the whole section inapplicable.
+            # Do not demand a count for an inapplicable section. Conversely,
+            # an unknown parent must remain unresolved even with count=0.
+            if section_state != "active":
+                rows.append({"section": section.key, "state": section_state, "fields": []})
+                continue
             if count is None:
                 rows.append({"section": section.key, "state": "unresolved_repeat_count",
                              "fields": []})
-                continue
-            if type(count) is not int or count < 0 or count > MAX_REPEATS:
-                raise ValueError("Repeat count out of bounds")
-            if section_state != "active":
-                rows.append({"section": section.key, "state": section_state, "fields": []})
                 continue
             indices = range(count)
         else:

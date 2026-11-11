@@ -60,7 +60,7 @@ def test_conditions_are_three_valued_not_silently_false():
     assert evaluate_condition(c, {"identity.has_extra":"unsure"}) == "unresolved"
     result = expand_manifest(sample(), {})
     assert result[0]["fields"][1]["condition_state"] == "unresolved"
-    assert result[1]["state"] == "unresolved_repeat_count"
+    assert result[1]["state"] == "unresolved"
 
 
 def test_repeat_sections_require_explicit_bounded_count():
@@ -110,3 +110,22 @@ def test_expanded_guidance_source_is_immutable_manifest_identity():
     with pytest.raises(ValueError):
         FieldDefinition("passport", "Passport", "identity.passport_number",
                         source_url="https://www.canada.ca/official")
+
+
+def test_conditional_repeats_respect_parent_applicability_without_silent_defaults():
+    manifest = sample()
+    # A verified 'no' is sufficient to mark the entire repeat section inactive.
+    inactive = expand_manifest(manifest, {"identity.has_history": "no"})
+    assert inactive[1] == {"section": "history", "state": "inactive", "fields": []}
+    # An unknown parent remains unresolved, even when an explicit zero is supplied.
+    unknown = expand_manifest(manifest, {}, {"history": 0})
+    assert unknown[1] == {"section": "history", "state": "unresolved", "fields": []}
+    # A confirmed 'yes' requires an explicit count; zero is accepted only when explicit.
+    active_missing = expand_manifest(manifest, {"identity.has_history": "yes"})
+    assert active_missing[1]["state"] == "unresolved_repeat_count"
+    assert len(expand_manifest(manifest, {"identity.has_history": "yes"},
+                               {"history": 0})) == 1
+    # Invalid counts remain rejected for inactive as well as active sections.
+    for bad in (-1, 21, True, 1.5):
+        with pytest.raises(ValueError):
+            expand_manifest(manifest, {"identity.has_history": "no"}, {"history": bad})
