@@ -18,6 +18,9 @@ from app.access import OrgAccess, READ_ROLES, allow, get_org_access
 from app.db import get_db
 from app.form_preparation_models import FormPreparationPacket
 from app.form_evidence_coverage import reviewed_subset_report
+from app.form_manifest import MANIFESTS
+from app.manifest_mapping import resolve_manifest_evidence
+from app.form_mapping import FormMappingBlocked
 from app.ircc_registry import REGISTRY
 from app.main import record_event
 from app.models import Case, CaseDocument, CaseFact, CaseIssue
@@ -117,6 +120,24 @@ def _render_snapshot(db, org_id, case_id):
         blocked.append("current_internal_manifest_unresolved")
     if coverage["source_recheck_required"]:
         blocked.append("current_internal_manifest_source_stale")
+    # A complete INTERNAL evidence subset must also resolve through the
+    # independently reviewed manifest-to-evidence kernel. This binds reviewed
+    # conditional controller documents, including inactive branches, into a
+    # separate provenance hash and blocks divergent resolver interpretations.
+    mapping_evidence_sha256 = None
+    mapping_resolved_field_count = 0
+    if coverage["verified_internal_subset"]:
+        try:
+            mapping = resolve_manifest_evidence(
+                manifest=MANIFESTS[source.code], org_id=org_id, case_id=case_id,
+                facts=facts, documents=docs, scan_status_by_document=scans)
+        except FormMappingBlocked:
+            blocked.append("manifest_evidence_resolution_blocked")
+        else:
+            mapping_evidence_sha256 = mapping.snapshot_sha256
+            mapping_resolved_field_count = len(mapping.field_to_canonical)
+            if mapping.manifest_sha256 != coverage["manifest_sha256"]:
+                blocked.append("manifest_evidence_revision_mismatch")
     data = {"case_id": str(case_id), "package_id": str(pkg.id),
             "form_code": source.code, "source_revision": source.revision_label,
             "source_observed_on": source.last_checked.isoformat(),
@@ -124,6 +145,8 @@ def _render_snapshot(db, org_id, case_id):
             "manifest_version": coverage["manifest_version"],
             "manifest_sha256": coverage["manifest_sha256"],
             "manifest_coverage_sha256": coverage["snapshot_sha256"],
+            "manifest_evidence_sha256": mapping_evidence_sha256,
+            "manifest_evidence_field_count": mapping_resolved_field_count,
             "manifest_field_count": coverage["internal_preview_field_count"],
             "manifest_verified_field_count": coverage["verified_preview_field_count"],
             "manifest_unresolved_condition_count": sum(
@@ -149,6 +172,8 @@ def _view(packet):
             "manifest_version": packet.field_snapshot.get("manifest_version"),
             "manifest_sha256": packet.field_snapshot.get("manifest_sha256"),
             "manifest_coverage_sha256": packet.field_snapshot.get("manifest_coverage_sha256"),
+            "manifest_evidence_sha256": packet.field_snapshot.get("manifest_evidence_sha256"),
+            "manifest_evidence_field_count": packet.field_snapshot.get("manifest_evidence_field_count"),
             "manifest_field_count": packet.field_snapshot.get("manifest_field_count"),
             "manifest_verified_field_count": packet.field_snapshot.get("manifest_verified_field_count"),
             "blockers": packet.blocker_snapshot,
@@ -198,7 +223,8 @@ def capture_packet(org_id: UUID, case_id: UUID, payload: CapturePacket,
         snapshot_sha256=snapshot["snapshot_sha256"],
         field_snapshot={key: snapshot[key] for key in (
             "fields", "manifest_version", "manifest_sha256",
-            "manifest_coverage_sha256", "manifest_field_count",
+            "manifest_coverage_sha256", "manifest_evidence_sha256",
+            "manifest_evidence_field_count", "manifest_field_count",
             "manifest_verified_field_count")},
         blocker_snapshot=snapshot["blockers"], verified_subset_complete=True,
         created_by_sub=access.principal.sub)
