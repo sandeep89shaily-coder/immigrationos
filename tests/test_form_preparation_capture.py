@@ -60,6 +60,8 @@ def test_preparation_snapshot_captures_verified_subset_only(api, monkeypatch):
     assert data["manifest_verified_field_count"] == 18
     assert len(data["manifest_sha256"]) == 64
     assert len(data["manifest_coverage_sha256"]) == 64
+    assert len(data["manifest_evidence_sha256"]) == 64
+    assert data["manifest_evidence_field_count"] == 18
     assert data["official_pdf_autofill_supported"] is False
     created = client.post(root + "/packets", json={
         "expected_sha256": data["snapshot_sha256"],
@@ -68,6 +70,8 @@ def test_preparation_snapshot_captures_verified_subset_only(api, monkeypatch):
     assert created.json()["fields"] == data["fields"]
     assert created.json()["manifest_sha256"] == data["manifest_sha256"]
     assert created.json()["manifest_verified_field_count"] == 18
+    assert created.json()["manifest_evidence_sha256"] == data["manifest_evidence_sha256"]
+    assert created.json()["manifest_evidence_field_count"] == 18
     assert created.json()["submission_supported"] is False
     with factory() as db:
         fact = db.query(CaseFact).filter(CaseFact.org_id == UUID(org),
@@ -110,9 +114,43 @@ def test_legacy_six_field_packet_cannot_bypass_current_manifest_gate(api, monkey
     assert data["manifest_field_count"]==24
     assert data["manifest_verified_field_count"]==6
     assert "current_internal_manifest_unresolved" in data["blockers"]
+    assert data["manifest_evidence_sha256"] is None
+    assert data["manifest_evidence_field_count"] == 0
     assert data["verified_subset_complete"] is False
     attempt=client.post(root+"/packets",json={
         "expected_sha256":data["snapshot_sha256"],
         "acknowledge_internal_subset_only":True})
     assert attempt.status_code==409, attempt.text
     assert client.get(root+"/packets").json()==[]
+
+
+def test_reviewed_coverage_cannot_bypass_manifest_evidence_resolver(api, monkeypatch):
+    """If coverage and the independent resolver disagree, capture fails closed."""
+    from app.form_mapping import FormMappingBlocked
+    client, _, _ = api
+    org, case, root = setup(api, "manifest-disagreement")
+    # Synthetic coverage report for the gate disagreement; all new packet
+    # captures still invoke the real evidence kernel, and may not bypass it.
+    monkeypatch.setattr(prep, "reviewed_subset_report", lambda **kwargs: {
+        "verified_internal_subset": True,
+        "source_recheck_required": False,
+        "manifest_version": MANIFESTS["IMM1294"].manifest_version,
+        "manifest_sha256": MANIFESTS["IMM1294"].digest,
+        "snapshot_sha256": "f" * 64,
+        "internal_preview_field_count": 24,
+        "verified_preview_field_count": 24,
+        "fields": [],
+    })
+    def deny(**kwargs):
+        raise FormMappingBlocked("Synthetic resolver blocked")
+    monkeypatch.setattr(prep, "resolve_manifest_evidence", deny)
+    snapshot = client.get(root + "/preview")
+    assert snapshot.status_code == 200
+    data = snapshot.json()
+    assert "manifest_evidence_resolution_blocked" in data["blockers"]
+    assert data["manifest_evidence_sha256"] is None
+    assert data["verified_subset_complete"] is False
+    assert client.post(root + "/packets", json={
+        "expected_sha256": data["snapshot_sha256"],
+        "acknowledge_internal_subset_only": True,
+    }).status_code == 409
