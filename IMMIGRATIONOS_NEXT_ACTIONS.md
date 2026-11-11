@@ -1,0 +1,25 @@
+# ImmigrationOS — prioritized development actions
+
+## P0 — complete conditional-manifest correctness
+- Review `fix/conditional-repeat-fail-closed-and-handoff` against latest main; run `pytest -q tests/test_form_manifest.py` and full suite in CI.
+- Acceptance: parent false/inactive needs no repeat count; unknown/unsure does not become empty; active needs explicit bounded integer; invalid hidden counts rejected; no regressions.
+- Then inspect all callers of `expand_manifest` for status expectations and evaluate conditions from verified, scan-cleared case facts only.
+
+## P0 — finish one official form safely
+- Pick an official revision, inventory every real field, conditional branch and signature requirement; pin source checksum/observation.
+- Complete an independently licensed, permitted SaaS autofill engine evaluation and independent PDF/Adobe/IRCC readback with synthetic golden samples.
+- Acceptance: every field, revision and conditional has traced acceptance, no claims of official form support until an RCIC signs off.
+
+## P0 — package integrity and approval
+- Bind every generated document to case, evidence and immutable source revision; fail closed on stale/replaced/unscanned documents.
+- Require scoped RCIC approval, signed package checklist and append-only audit.
+
+## P1 — security
+- Independently verify PostgreSQL RLS including row/case-level leakage, portal authorization, revocation and privilege escalation; test with separate restricted runtime role.
+- Security review of secrets, encryption, malware quarantine, retention, backups, privacy jurisdiction and vendor agreements before live data.
+
+## P2 — essential CRM only
+Communications, deadlines, tasks, invoices/trust accounting after end-to-end case package/approval passes.
+
+## Session discipline
+Inspect main and PRs before changes; branch → tests → PR → inspect CI → update these four handoff files. No background development claim.
